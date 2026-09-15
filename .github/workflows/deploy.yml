@@ -25,10 +25,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
+          # Bỏ "cache: npm" vì repo chưa có package-lock.json.
+          # Nếu sau này bạn commit file package-lock.json, có thể thêm lại dòng "cache: npm" để build nhanh hơn.
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
       - name: Build
         run: npm run build
