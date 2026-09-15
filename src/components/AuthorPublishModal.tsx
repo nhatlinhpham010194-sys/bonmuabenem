@@ -1,0 +1,1046 @@
+import React, { useState } from 'react';
+import { Story, Chapter, Announcement } from '../types';
+import {
+  X,
+  Sparkles,
+  BookOpen,
+  PlusCircle,
+  RotateCcw,
+  CheckCircle2,
+  AlertTriangle,
+  Upload,
+  FileText,
+  Bell,
+  Trash2,
+  Lock,
+  Key,
+  Eye,
+  Heart,
+  MessageSquare,
+  Bookmark,
+  Layers,
+  Check,
+} from 'lucide-react';
+import {
+  publishStory,
+  deleteStory,
+  publishChapter,
+  publishAnnouncement,
+  deleteAnnouncement,
+  resetAllMetricsToZero,
+  seedSampleStoriesWithZeroStats,
+  clearAllStoriesAndChapters,
+} from '../lib/realtimeService';
+
+interface AuthorPublishModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  stories: Story[];
+  announcements: Announcement[];
+  onStoriesUpdated?: () => void;
+}
+
+const PRESET_COVERS = [
+  {
+    name: 'Hoa anh đào mùa hạ',
+    url: 'https://images.unsplash.com/photo-1522383225653-ed111181a951?auto=format&fit=crop&w=800&q=80',
+  },
+  {
+    name: 'Bức thư và mây trời',
+    url: 'https://images.unsplash.com/photo-1490750967868-88aa4486c946?auto=format&fit=crop&w=800&q=80',
+  },
+  {
+    name: 'Chiếc ô cơn mưa xanh',
+    url: 'https://images.unsplash.com/photo-1519751138087-5bf79df62d5b?auto=format&fit=crop&w=800&q=80',
+  },
+  {
+    name: 'Tán phong ngày hè',
+    url: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=800&q=80',
+  },
+  {
+    name: 'Khu vườn mùa hạ xanh',
+    url: 'https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?auto=format&fit=crop&w=800&q=80',
+  },
+];
+
+const PRESET_GENRES = [
+  'Thanh xuân vườn trường',
+  'Ngọt sủng',
+  'Chữa lành',
+  'HE',
+  'Đô thị tình duyên',
+  'Song hướng thầm mến',
+  'Học đường',
+  'Gương vỡ lại lành',
+  'Hài hước',
+  'Ấm áp',
+];
+
+export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
+  isOpen,
+  onClose,
+  stories,
+  announcements,
+  onStoriesUpdated,
+}) => {
+  const [activeTab, setActiveTab] = useState<'reset' | 'newStory' | 'newChapter' | 'newAnnouncement' | 'manage'>('reset');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // New Story Form State
+  const [storyTitle, setStoryTitle] = useState('');
+  const [storyOriginalTitle, setStoryOriginalTitle] = useState('');
+  const [storyAuthor, setStoryAuthor] = useState('');
+  const [storyTranslator, setStoryTranslator] = useState('Mellifluous');
+  const [storyStatus, setStoryStatus] = useState<'completed' | 'ongoing'>('ongoing');
+  const [selectedGenres, setSelectedGenres] = useState<string[]>(['Thanh xuân vườn trường', 'Ngọt sủng']);
+  const [customGenre, setCustomGenre] = useState('');
+  const [storySummary, setStorySummary] = useState('');
+  const [storyCover, setStoryCover] = useState(PRESET_COVERS[0].url);
+  const [hasPassword, setHasPassword] = useState(false);
+  const [passwordHint, setPasswordHint] = useState('');
+  const [passwordKey, setPasswordKey] = useState('');
+  const [totalChapters, setTotalChapters] = useState(30);
+
+  // New Chapter Form State
+  const [targetStoryId, setTargetStoryId] = useState(stories[0]?.id || '');
+  const [partType, setPartType] = useState<'main' | 'extra'>('main');
+  const [chapterNumber, setChapterNumber] = useState(1);
+  const [chapterTitle, setChapterTitle] = useState('');
+  const [chapterContent, setChapterContent] = useState('');
+  const [translatorNote, setTranslatorNote] = useState('');
+  const [isChapterLocked, setIsChapterLocked] = useState(false);
+
+  // New Announcement Form State
+  const [annTitle, setAnnTitle] = useState('');
+  const [annTag, setAnnTag] = useState<'Thông báo' | 'Lịch đăng' | 'Nhắc nhở' | 'Lưu ý'>('Thông báo');
+  const [annContent, setAnnContent] = useState('');
+  const [annIsPinned, setAnnIsPinned] = useState(true);
+
+  if (!isOpen) return null;
+
+  const showFeedback = (type: 'success' | 'error', text: string) => {
+    setFeedbackMessage({ type, text });
+    setTimeout(() => {
+      setFeedbackMessage(null);
+    }, 4500);
+  };
+
+  // 1. Reset all metrics to 0
+  const handleResetMetrics = async () => {
+    if (!window.confirm('Xác nhận đưa toàn bộ số liệu về mặc định 0? Lượt truy cập, lượt xem, lượt thích, người theo dõi sẽ được tính lại từ đầu kể từ thời điểm này.')) {
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      await resetAllMetricsToZero();
+      showFeedback('success', '🌸 Đã đưa toàn bộ số liệu về mặc định (0) thành công! Mọi lượt xem, tim và người theo dõi từ giờ sẽ được tính thực tế từ độc giả.');
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Có lỗi xảy ra khi thiết lập số liệu. Vui lòng thử lại.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 2. Clear all stories & posts
+  const handleClearAllPosts = async () => {
+    if (!window.confirm('CẢNH BÁO: Thao tác này sẽ xóa toàn bộ bài đăng/truyện mẫu để đưa về trang trắng 100%. Bạn có chắc chắn không?')) {
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      await clearAllStoriesAndChapters();
+      showFeedback('success', '✓ Đã xóa toàn bộ bài viết mẫu! Trang web hiện đã ở chế độ trang trắng 100%, sẵn sàng cho bạn đăng bài viết đầu tiên.');
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Không thể xóa bài viết. Vui lòng kiểm tra lại.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 3. Seed template stories with 0 stats
+  const handleSeedTemplateStories = async () => {
+    if (!window.confirm('Khởi tạo 5 bộ truyện mẫu của nhà Mel với toàn bộ số liệu (lượt xem, lượt thích, bình luận) bằng 0?')) {
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      await seedSampleStoriesWithZeroStats();
+      showFeedback('success', '✓ Đã nạp 5 bộ truyện mẫu với số liệu lượt xem = 0, lượt thích = 0 chuẩn xác!');
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Có lỗi khi nạp truyện mẫu.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 4. Publish New Story
+  const handleCreateStory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!storyTitle.trim() || !storyAuthor.trim()) {
+      showFeedback('error', 'Vui lòng nhập tên truyện và tên tác giả.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const generatedId =
+        storyTitle
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '') || `truyen-${Date.now()}`;
+
+      const newStory: Story = {
+        id: generatedId,
+        title: storyTitle.trim(),
+        originalTitle: storyOriginalTitle.trim() || undefined,
+        author: storyAuthor.trim(),
+        translator: storyTranslator.trim() || 'Mellifluous',
+        status: storyStatus,
+        genre: selectedGenres.length > 0 ? selectedGenres : ['Ngôn tình', 'Ngọt sủng'],
+        summary: storySummary.trim() || 'Chưa có văn án.',
+        totalChapters: Number(totalChapters) || 1,
+        completedChapters: 0,
+        mainChaptersCount: Number(totalChapters) || 1,
+        extraChaptersCount: 0,
+        coverImage: storyCover,
+        colorTheme: 'from-pink-100 to-rose-200 dark:from-pink-950/40 dark:to-rose-900/40',
+        hasPassword,
+        passwordHint: hasPassword ? passwordHint.trim() : '',
+        passwordKey: hasPassword ? passwordKey.trim().toLowerCase() : '',
+        updatedAt: 'Vừa đăng',
+        views: 0,
+        likes: 0,
+        featured: true,
+      };
+
+      await publishStory(newStory);
+      showFeedback('success', `🎉 Đã xuất bản thành công tác phẩm "${newStory.title}"! Lượt xem và lượt thích bắt đầu từ 0.`);
+      
+      // Reset form
+      setStoryTitle('');
+      setStoryOriginalTitle('');
+      setStoryAuthor('');
+      setStorySummary('');
+      setHasPassword(false);
+      setPasswordHint('');
+      setPasswordKey('');
+
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Không thể lưu truyện vào cơ sở dữ liệu. Vui lòng thử lại.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 5. Publish New Chapter
+  const handleCreateChapter = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetStoryId || !chapterTitle.trim() || !chapterContent.trim()) {
+      showFeedback('error', 'Vui lòng chọn truyện, nhập tiêu đề và nội dung chương.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const chapterId = `${targetStoryId}-${partType === 'extra' ? 'extra' : 'c'}${chapterNumber}`;
+      const newChapter: Chapter = {
+        id: chapterId,
+        storyId: targetStoryId,
+        chapterNumber: Number(chapterNumber),
+        title: chapterTitle.trim(),
+        publishedAt: new Date().toISOString(),
+        isLocked: isChapterLocked,
+        content: chapterContent.trim(),
+        translatorNote: translatorNote.trim() || undefined,
+        wordCount: chapterContent.trim().split(/\s+/).length,
+        isExtra: partType === 'extra',
+        partType,
+      };
+
+      await publishChapter(newChapter);
+      showFeedback('success', `🎉 Đã đăng thành công "${newChapter.title}"!`);
+
+      // Reset form
+      setChapterTitle('');
+      setChapterContent('');
+      setTranslatorNote('');
+      setChapterNumber((prev) => prev + 1);
+
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Lỗi khi đăng chương. Vui lòng thử lại.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 6. Publish Announcement
+  const handleCreateAnnouncement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!annTitle.trim() || !annContent.trim()) {
+      showFeedback('error', 'Vui lòng nhập tiêu đề và nội dung thông báo.');
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const newAnn: Announcement = {
+        id: `ann-${Date.now()}`,
+        title: annTitle.trim(),
+        tag: annTag,
+        content: annContent.trim(),
+        date: new Date().toLocaleDateString('vi-VN'),
+        isPinned: annIsPinned,
+      };
+
+      await publishAnnouncement(newAnn);
+      showFeedback('success', `🎉 Đã đăng bảng tin "${newAnn.title}" thành công!`);
+
+      setAnnTitle('');
+      setAnnContent('');
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Lỗi khi đăng thông báo.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 7. Delete story
+  const handleDeleteStory = async (id: string, title: string) => {
+    if (!window.confirm(`Xác nhận xóa bộ truyện "${title}"?`)) return;
+    setIsProcessing(true);
+    try {
+      await deleteStory(id);
+      showFeedback('success', `Đã xóa truyện "${title}".`);
+      if (onStoriesUpdated) onStoriesUpdated();
+    } catch (err) {
+      showFeedback('error', 'Lỗi khi xóa truyện.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div
+      id="author-publishing-modal"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 md:p-8 overflow-y-auto animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-white dark:bg-stone-900 rounded-3xl shadow-2xl border border-pink-200/80 dark:border-stone-700 overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* Modal Header */}
+        <div className="sticky top-0 z-20 flex items-center justify-between px-6 py-4 bg-gradient-to-r from-pink-50 via-white to-amber-50 dark:from-stone-900 dark:via-stone-900 dark:to-stone-800 border-b border-pink-100 dark:border-stone-800">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-pink-500 text-white flex items-center justify-center shadow-xs">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="font-serif text-base sm:text-lg font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                <span>Trung tâm Tác giả & Xuất bản Web</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300 font-mono">
+                  better and better
+                </span>
+              </h2>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                Đưa số liệu về mặc định và quản lý các bài đăng chính thức của Mellifluous
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            id="close-author-modal-btn"
+            onClick={onClose}
+            className="p-2 rounded-xl bg-stone-100 hover:bg-pink-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-500 hover:text-pink-600 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Feedback Alert Toast */}
+        {feedbackMessage && (
+          <div
+            className={`px-6 py-3 text-xs sm:text-sm font-medium flex items-center gap-2 border-b ${
+              feedbackMessage.type === 'success'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-800'
+                : 'bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/80 dark:text-rose-200 dark:border-rose-800'
+            }`}
+          >
+            {feedbackMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+            ) : (
+              <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0" />
+            )}
+            <span>{feedbackMessage.text}</span>
+          </div>
+        )}
+
+        {/* Nav Tabs */}
+        <div className="flex border-b border-pink-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/50 px-6 gap-2 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('reset')}
+            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'reset'
+                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
+                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
+            }`}
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            <span>Xuất bản & Đưa về mặc định (0)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('newStory')}
+            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'newStory'
+                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
+                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
+            }`}
+          >
+            <PlusCircle className="w-3.5 h-3.5" />
+            <span>Đăng truyện mới</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('newChapter')}
+            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'newChapter'
+                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
+                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            <span>Đăng chương / Phiên ngoại</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('newAnnouncement')}
+            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'newAnnouncement'
+                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
+                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Đăng Bảng tin</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('manage')}
+            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'manage'
+                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
+                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Quản lý bài đã đăng ({stories.length})</span>
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <div className="overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
+          {/* ========================================================= */}
+          {/* TAB 1: RESET METRICS TO 0 (XUẤT BẢN WEBSITE CHÍNH THỨC)    */}
+          {/* ========================================================= */}
+          {activeTab === 'reset' && (
+            <div className="space-y-6">
+              {/* Publication Status Banner */}
+              <div className="p-6 rounded-2xl bg-gradient-to-br from-pink-50 via-rose-50 to-amber-50 dark:from-stone-800 dark:via-pink-950/20 dark:to-stone-800 border border-pink-200/80 dark:border-stone-700 space-y-3">
+                <div className="flex items-center gap-2 text-pink-700 dark:text-pink-300 font-serif font-bold text-lg">
+                  <Sparkles className="w-5 h-5 text-pink-500" />
+                  <span>Trạng thái xuất bản: Sẵn sàng đi vào hoạt động chính thức</span>
+                </div>
+                <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed font-sans">
+                  Khi xuất bản trang web, mọi con số ban đầu sẽ được đưa về mặc định (0) gồm: lượt truy cập, lượt theo dõi, lượt bình luận, lượt thích, và lượt xem của từng truyện. Toàn bộ các tương tác sẽ chỉ được ghi nhận thực tế từ độc giả ghé thăm kể từ thời điểm này!
+                </p>
+              </div>
+
+              {/* Action Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Action 1: Đưa toàn bộ số liệu về mặc định (0) */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-pink-200/70 dark:border-stone-700 shadow-xs flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-pink-600 dark:text-pink-400 font-semibold text-base">
+                      <RotateCcw className="w-4 h-4 text-pink-500" />
+                      <span>Đưa tất cả số liệu về mặc định 0</span>
+                    </div>
+                    <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+                      Thiết lập lại lượt truy cập, lượt xem truyện, số tim, bình luận và người theo dõi về 0. Giữ nguyên danh sách truyện đang có và bắt đầu ghi nhận dữ liệu thật.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={handleResetMetrics}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-medium text-xs sm:text-sm shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>{isProcessing ? 'Đang xử lý...' : 'Đưa toàn bộ số liệu về 0 ngay'}</span>
+                  </button>
+                </div>
+
+                {/* Action 2: Dọn sạch bài viết về trang trắng 100% */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-amber-200/70 dark:border-stone-700 shadow-xs flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-semibold text-base">
+                      <Trash2 className="w-4 h-4 text-amber-500" />
+                      <span>Trang trắng 100% (Xóa bài viết mẫu)</span>
+                    </div>
+                    <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
+                      Xóa toàn bộ các truyện và thông báo mẫu. Trang web sẽ chỉ hiển thị những tác phẩm do chính tay bạn tạo và đăng tải kể từ lúc này.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={handleClearAllPosts}
+                    className="w-full py-2.5 px-4 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-stone-700 dark:hover:bg-stone-600 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-stone-600 font-medium text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>{isProcessing ? 'Đang xử lý...' : 'Xóa bài mẫu để bắt đầu trang trắng'}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Template Restoration Option */}
+              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs text-stone-600 dark:text-stone-400">
+                  <strong className="block text-stone-800 dark:text-stone-200">Muốn dùng 5 bộ truyện mẫu của Mel làm khung sườn?</strong>
+                  Bấm nạp truyện mẫu với số lượt xem, lượt thích và bình luận được đặt sẵn bằng 0.
+                </div>
+                <button
+                  type="button"
+                  disabled={isProcessing}
+                  onClick={handleSeedTemplateStories}
+                  className="px-3 py-2 rounded-xl text-xs font-medium bg-white dark:bg-stone-700 border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-200 hover:bg-pink-50 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
+                >
+                  Nạp 5 truyện mẫu (Số liệu = 0)
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 2: ĐĂNG TRUYỆN MỚI (NEW STORY)                         */}
+          {/* ========================================================= */}
+          {activeTab === 'newStory' && (
+            <form onSubmit={handleCreateStory} className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Tên truyện tiếng Việt <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: Mùa Hè Năm Ấy Gió Thổi Ngang Qua"
+                    value={storyTitle}
+                    onChange={(e) => setStoryTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-800"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Tên gốc tiếng Trung / Hàn (nếu có)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="VD: 那年夏天的风吹过"
+                    value={storyOriginalTitle}
+                    onChange={(e) => setStoryOriginalTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Tác giả gốc <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: Lam Hải Nhược Tuyết"
+                    value={storyAuthor}
+                    onChange={(e) => setStoryAuthor(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Dịch giả / Editor
+                  </label>
+                  <input
+                    type="text"
+                    value={storyTranslator}
+                    onChange={(e) => setStoryTranslator(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Tình trạng truyện
+                  </label>
+                  <select
+                    value={storyStatus}
+                    onChange={(e) => setStoryStatus(e.target.value as 'completed' | 'ongoing')}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300"
+                  >
+                    <option value="ongoing">Đang tiến hành (Đang cập nhật)</option>
+                    <option value="completed">Đã hoàn thành (Full HE)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Dự kiến tổng số chương
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={totalChapters}
+                    onChange={(e) => setTotalChapters(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+              </div>
+
+              {/* Genre Selection */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Thể loại truyện (Nhấp để chọn)
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {PRESET_GENRES.map((g) => {
+                    const isSelected = selectedGenres.includes(g);
+                    return (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => {
+                          if (isSelected) setSelectedGenres(selectedGenres.filter((x) => x !== g));
+                          else setSelectedGenres([...selectedGenres, g]);
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                          isSelected
+                            ? 'bg-pink-500 text-white border-pink-500 font-medium'
+                            : 'bg-white dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700 hover:border-pink-300'
+                        }`}
+                      >
+                        {isSelected ? '✓ ' : '+ '}
+                        {g}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Story Summary */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Văn án / Tóm tắt truyện
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Nhập văn án ngọt ngào hoặc lời tựa của bộ truyện..."
+                  value={storySummary}
+                  onChange={(e) => setStorySummary(e.target.value)}
+                  className="w-full p-3 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300 leading-relaxed"
+                />
+              </div>
+
+              {/* Cover Presets or Custom URL */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Chọn ảnh bìa minh họa phong cách màu nước:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  {PRESET_COVERS.map((cov) => (
+                    <div
+                      key={cov.url}
+                      onClick={() => setStoryCover(cov.url)}
+                      className={`relative aspect-3/4 rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
+                        storyCover === cov.url
+                          ? 'border-pink-500 shadow-md ring-2 ring-pink-300'
+                          : 'border-transparent hover:opacity-80'
+                      }`}
+                    >
+                      <img src={cov.url} alt={cov.name} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 flex items-end p-1.5">
+                        <span className="text-[10px] text-white font-medium line-clamp-1">{cov.name}</span>
+                      </div>
+                      {storyCover === cov.url && (
+                        <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-pink-500 text-white flex items-center justify-center">
+                          <Check className="w-3 h-3" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <div className="pt-1">
+                  <input
+                    type="url"
+                    placeholder="Hoặc dán URL ảnh bìa tùy chỉnh của bạn..."
+                    value={storyCover}
+                    onChange={(e) => setStoryCover(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 text-xs bg-white dark:bg-stone-800"
+                  />
+                </div>
+              </div>
+
+              {/* Password Settings */}
+              <div className="p-4 rounded-2xl bg-amber-50/60 dark:bg-stone-800/60 border border-amber-200/80 dark:border-stone-700 space-y-3">
+                <label className="flex items-center gap-2 text-xs font-semibold text-stone-800 dark:text-stone-200 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={hasPassword}
+                    onChange={(e) => setHasPassword(e.target.checked)}
+                    className="rounded-sm text-pink-500 focus:ring-pink-400"
+                  />
+                  <Key className="w-4 h-4 text-amber-600" />
+                  <span>Cài đặt mật khẩu (Password) cho truyện này</span>
+                </label>
+
+                {hasPassword && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    <div>
+                      <span className="text-[11px] text-stone-600 dark:text-stone-400 block mb-1">
+                        Gợi ý giải pass (hiển thị cho bạn đọc)
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="VD: Tên loài hoa kẹp trong từ điển (10 ký tự không dấu)"
+                        value={passwordHint}
+                        onChange={(e) => setPasswordHint(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-amber-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-stone-600 dark:text-stone-400 block mb-1">
+                        Đáp án mật mã (viết thường không dấu)
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="VD: hoaanhdao"
+                        value={passwordKey}
+                        onChange={(e) => setPasswordKey(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-amber-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Submit Button */}
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-medium text-sm shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>{isProcessing ? 'Đang lưu...' : 'Xuất bản tác phẩm ngay (Views = 0)'}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 3: ĐĂNG CHƯƠNG MỚI (NEW CHAPTER)                       */}
+          {/* ========================================================= */}
+          {activeTab === 'newChapter' && (
+            <form onSubmit={handleCreateChapter} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Chọn bộ truyện <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={targetStoryId}
+                    onChange={(e) => setTargetStoryId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs font-medium"
+                  >
+                    {stories.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.title}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Phân loại chương
+                  </label>
+                  <select
+                    value={partType}
+                    onChange={(e) => setPartType(e.target.value as 'main' | 'extra')}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs"
+                  >
+                    <option value="main">Chính truyện</option>
+                    <option value="extra">Phiên ngoại (Ngoại truyện)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Số thứ tự chương
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={chapterNumber}
+                    onChange={(e) => setChapterNumber(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Tiêu đề chương <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="VD: Chương 1: Cơn gió đầu mùa hè năm ấy"
+                  value={chapterTitle}
+                  onChange={(e) => setChapterTitle(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-300"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Lời nhắn gửi của Mellifluous (Translator Note)
+                </label>
+                <input
+                  type="text"
+                  placeholder="VD: Chúc các nàng đọc truyện vui vẻ! Hãy để lại bình luận cho tớ biết cảm nhận nhé 🌸"
+                  value={translatorNote}
+                  onChange={(e) => setTranslatorNote(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Nội dung chương truyện <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={8}
+                  required
+                  placeholder="Dán hoặc gõ toàn bộ nội dung chương truyện tại đây..."
+                  value={chapterContent}
+                  onChange={(e) => setChapterContent(e.target.value)}
+                  className="w-full p-3.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm leading-relaxed focus:outline-hidden focus:ring-2 focus:ring-pink-300 font-serif"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs font-medium text-stone-700 dark:text-stone-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isChapterLocked}
+                    onChange={(e) => setIsChapterLocked(e.target.checked)}
+                    className="rounded-sm text-amber-500 focus:ring-amber-400"
+                  />
+                  <Lock className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Khóa mật khẩu chương này (Chỉ mở khi độc giả giải đúng pass)</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white font-medium text-sm shadow-sm hover:from-pink-600 hover:to-rose-600 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isProcessing ? 'Đang đăng...' : 'Đăng chương này ngay'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 4: ĐĂNG BẢNG TIN (NEW ANNOUNCEMENT)                    */}
+          {/* ========================================================= */}
+          {activeTab === 'newAnnouncement' && (
+            <form onSubmit={handleCreateAnnouncement} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Tiêu đề bảng tin <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="VD: Lịch đăng chương tuần mới • Tháng 7 rực rỡ"
+                    value={annTitle}
+                    onChange={(e) => setAnnTitle(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm focus:ring-2 focus:ring-pink-300"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                    Thẻ phân loại
+                  </label>
+                  <select
+                    value={annTag}
+                    onChange={(e) => setAnnTag(e.target.value as any)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs font-medium"
+                  >
+                    <option value="Thông báo">Thông báo chung</option>
+                    <option value="Lịch đăng">Lịch đăng chương</option>
+                    <option value="Nhắc nhở">Nhắc nhở giải pass</option>
+                    <option value="Lưu ý">Lưu ý bản quyền & phi thương mại</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300">
+                  Nội dung thông báo <span className="text-rose-500">*</span>
+                </label>
+                <textarea
+                  rows={4}
+                  required
+                  placeholder="Nhập thông tin nhắn gửi đến độc giả của nhà..."
+                  value={annContent}
+                  onChange={(e) => setAnnContent(e.target.value)}
+                  className="w-full p-3 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-sm"
+                />
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <label className="flex items-center gap-2 text-xs font-medium text-stone-700 dark:text-stone-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={annIsPinned}
+                    onChange={(e) => setAnnIsPinned(e.target.checked)}
+                    className="rounded-sm text-pink-500"
+                  />
+                  <span>Ghim thông báo này lên đầu trang</span>
+                </label>
+
+                <button
+                  type="submit"
+                  disabled={isProcessing}
+                  className="px-5 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 text-white font-medium text-xs sm:text-sm shadow-sm transition-all"
+                >
+                  {isProcessing ? 'Đang lưu...' : 'Đăng bảng tin'}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB 5: QUẢN LÝ BÀI ĐÃ ĐĂNG (MANAGE POSTS)                 */}
+          {/* ========================================================= */}
+          {activeTab === 'manage' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-stone-600 dark:text-stone-400">
+                  Hiện có <strong>{stories.length}</strong> bộ truyện trên website
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('newStory')}
+                  className="text-xs text-pink-600 hover:text-pink-700 font-medium flex items-center gap-1 cursor-pointer"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Thêm truyện mới</span>
+                </button>
+              </div>
+
+              {stories.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">
+                  <p className="text-sm font-serif text-stone-700 dark:text-stone-300">
+                    Chưa có bộ truyện nào trên website.
+                  </p>
+                  <p className="text-xs text-stone-500">
+                    Hãy bấm vào tab "Đăng truyện mới" để xuất bản tác phẩm đầu tiên của bạn!
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-stone-100 dark:divide-stone-800 border border-stone-200 dark:border-stone-700 rounded-2xl overflow-hidden bg-white dark:bg-stone-800/80">
+                  {stories.map((s) => (
+                    <div
+                      key={s.id}
+                      className="p-3.5 sm:p-4 flex items-center justify-between gap-3 hover:bg-pink-50/40 dark:hover:bg-stone-700/40 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={s.coverImage}
+                          alt={s.title}
+                          className="w-12 h-16 object-cover rounded-lg shrink-0 border border-stone-200 dark:border-stone-700"
+                        />
+                        <div className="min-w-0">
+                          <h4 className="font-serif text-sm font-bold text-stone-800 dark:text-stone-100 truncate">
+                            {s.title}
+                          </h4>
+                          <div className="flex flex-wrap items-center gap-2 text-[11px] text-stone-500 dark:text-stone-400 font-mono mt-0.5">
+                            <span>Tác giả: {s.author}</span>
+                            <span>•</span>
+                            <span className="text-sky-600 dark:text-sky-400">
+                              {s.views || 0} lượt xem
+                            </span>
+                            <span>•</span>
+                            <span className="text-pink-600 dark:text-pink-400">
+                              {s.likes || 0} tim
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTargetStoryId(s.id);
+                            setActiveTab('newChapter');
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg text-xs bg-pink-50 text-pink-700 dark:bg-pink-950 dark:text-pink-300 font-medium hover:bg-pink-100 transition-colors"
+                        >
+                          + Thêm chương
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStory(s.id, s.title)}
+                          className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
+                          title="Xóa truyện này"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
