@@ -35,12 +35,24 @@ import {
 } from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// Support both environment variables (for GitHub Pages / Vercel / external hosting) and direct config
+const env = (typeof import.meta !== 'undefined' && (import.meta as any).env) || {};
+const resolvedFirebaseConfig = {
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfig?.projectId,
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfig?.appId,
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfig?.apiKey,
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig?.authDomain,
+  firestoreDatabaseId: env.VITE_FIREBASE_DATABASE_ID || firebaseConfig?.firestoreDatabaseId,
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig?.storageBucket,
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig?.messagingSenderId,
+};
+
 // Initialize Firebase App singleton
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const app = !getApps().length ? initializeApp(resolvedFirebaseConfig) : getApp();
 
 // Initialize Firestore with specific database ID from config if present
-export const db: Firestore = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+export const db: Firestore = resolvedFirebaseConfig.firestoreDatabaseId
+  ? getFirestore(app, resolvedFirebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
 
 // Initialize Firebase Auth

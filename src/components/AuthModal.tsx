@@ -25,10 +25,12 @@ export const AuthModal: React.FC = () => {
     signInWithEmail,
     registerWithEmail,
     quickAuthorLogin,
+    quickReaderLogin,
     logout,
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'google' | 'email_login' | 'email_register'>('google');
+  const [activeTab, setActiveTab] = useState<'google' | 'guest' | 'email_login' | 'email_register'>('google');
+  const [guestNickname, setGuestNickname] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -46,14 +48,28 @@ export const AuthModal: React.FC = () => {
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/popup-blocked') {
-        setErrorMsg('Trình duyệt đang chặn cửa sổ đăng nhập Google. Vui lòng cho phép popup hoặc dùng tùy chọn bên dưới.');
+        setErrorMsg('Trình duyệt đang chặn cửa sổ đăng nhập Google. Vui lòng cho phép mở popup hoặc chuyển sang tab "Biệt hiệu Độc giả" / "Email" bên cạnh.');
       } else if (err.code === 'auth/cancelled-popup-request' || err.code === 'auth/popup-closed-by-user') {
         setErrorMsg('Cửa sổ đăng nhập đã được đóng lại.');
+      } else if (err.code === 'auth/unauthorized-domain') {
+        const currentDomain = typeof window !== 'undefined' ? window.location.hostname : 'này';
+        setErrorMsg(
+          `Tên miền "${currentDomain}" chưa được thêm vào mục Authorized Domains trong Firebase Console. Quý độc giả có thể dùng tab "Biệt hiệu Độc giả" hoặc "Email & Mật khẩu" để tham gia ngay!`
+        );
       } else {
         setErrorMsg('Không thể kết nối với dịch vụ Google: ' + (err.message || 'Vui lòng thử lại hoặc chọn email bên dưới'));
       }
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleGuestSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!guestNickname.trim()) {
+      quickReaderLogin('Bạn đọc yêu dấu');
+    } else {
+      quickReaderLogin(guestNickname.trim());
     }
   };
 
@@ -93,7 +109,7 @@ export const AuthModal: React.FC = () => {
       role="dialog"
       aria-modal="true"
       aria-label="Cửa sổ Đăng nhập và Đăng ký tài khoản"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={closeAuthModal}
     >
       <div
@@ -219,33 +235,44 @@ export const AuthModal: React.FC = () => {
               </div>
 
               {/* Tab Selector */}
-              <div className="flex items-center p-1 rounded-xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-medium">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs font-medium">
                 <button
                   type="button"
                   onClick={() => setActiveTab('google')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer truncate ${
                     activeTab === 'google'
                       ? 'bg-white dark:bg-stone-700 text-pink-600 dark:text-pink-300 font-semibold shadow-2xs'
                       : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                   }`}
                 >
-                  Đăng nhập Google (Gmail)
+                  Google
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('guest')}
+                  className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer truncate ${
+                    activeTab === 'guest'
+                      ? 'bg-white dark:bg-stone-700 text-pink-600 dark:text-pink-300 font-semibold shadow-2xs'
+                      : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                  }`}
+                >
+                  🌸 Biệt hiệu Độc giả
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('email_login')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer truncate ${
                     activeTab === 'email_login'
                       ? 'bg-white dark:bg-stone-700 text-pink-600 dark:text-pink-300 font-semibold shadow-2xs'
                       : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                   }`}
                 >
-                  Email & Mật khẩu
+                  Email
                 </button>
                 <button
                   type="button"
                   onClick={() => setActiveTab('email_register')}
-                  className={`flex-1 py-1.5 rounded-lg text-center transition-all cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-lg text-center transition-all cursor-pointer truncate ${
                     activeTab === 'email_register'
                       ? 'bg-white dark:bg-stone-700 text-pink-600 dark:text-pink-300 font-semibold shadow-2xs'
                       : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
@@ -347,7 +374,39 @@ export const AuthModal: React.FC = () => {
                 </div>
               )}
 
-              {/* Tab 2 & 3: Email Login / Register */}
+              {/* Tab 2: Biệt hiệu Độc giả (Instant nickname login - no password or OAuth needed) */}
+              {activeTab === 'guest' && (
+                <form onSubmit={handleGuestSubmit} className="space-y-4 pt-1">
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-br from-pink-50 to-rose-50 dark:from-stone-800 dark:to-pink-950/20 border border-pink-200/80 dark:border-stone-700 text-xs text-stone-700 dark:text-stone-300 leading-relaxed">
+                    <span className="font-semibold text-pink-700 dark:text-pink-300">🌸 Dành cho độc giả: </span>
+                    Chỉ cần nhập tên gọi hoặc biệt hiệu yêu thích của bạn, không cần đăng ký mật khẩu hay mở cửa sổ pop-up. Bạn có thể bình luận, lưu truyện và gửi tâm sự ngay!
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-medium text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-pink-500" />
+                      <span>Biệt hiệu / Tên của bạn:</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={guestNickname}
+                      onChange={(e) => setGuestNickname(e.target.value)}
+                      placeholder="Ví dụ: Tiểu Mộc, Độc giả tháng Năm, Bé Bắp..."
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs sm:text-sm text-stone-800 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-pink-400"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-medium text-xs sm:text-sm shadow-xs transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <span>Vào đọc & bình luận ngay 🌸</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </form>
+              )}
+
+              {/* Tab 3 & 4: Email Login / Register */}
               {(activeTab === 'email_login' || activeTab === 'email_register') && (
                 <form onSubmit={handleEmailSubmit} className="space-y-3 pt-1">
                   {activeTab === 'email_register' && (

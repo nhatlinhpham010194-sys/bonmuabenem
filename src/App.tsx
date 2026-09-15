@@ -18,6 +18,7 @@ import { OngoingStoriesView } from './components/OngoingStoriesView';
 import { HomePasswordSection } from './components/HomePasswordSection';
 import { HomeOtherSection } from './components/HomeOtherSection';
 import { SearchModal } from './components/SearchModal';
+import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
 import { BackgroundMusicBar } from './components/BackgroundMusicBar';
 import { SakuraPetals } from './components/SakuraPetals';
@@ -747,6 +748,9 @@ export default function App() {
         stories={stories}
         announcements={announcements}
       />
+
+      {/* Global Authentication Modal (Login / Register / Fast Author & Reader Access) */}
+      <AuthModal />
 
       {/* Global Background Music Player Widget */}
       <BackgroundMusicBar />

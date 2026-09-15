@@ -44,6 +44,7 @@ interface AuthContextType {
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
   quickAuthorLogin: (authorEmail: string) => void;
+  quickReaderLogin: (nickname: string) => void;
   logout: () => Promise<void>;
 }
 
@@ -197,6 +198,25 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     closeAuthModal();
   };
 
+  // Quick sign-in for Readers / Guests (allows immediate reading & commenting with nickname)
+  const quickReaderLogin = (nickname: string) => {
+    const trimmed = nickname.trim() || 'Bạn đọc thân thương';
+    const appUser: AppUser = {
+      uid: `reader_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      email: null,
+      displayName: trimmed,
+      photoURL: null,
+      isAuthor: false,
+      role: 'reader',
+      roleTitle: 'Độc giả yêu mến',
+    };
+    setUser(appUser);
+    try {
+      localStorage.setItem('mel_user_session', JSON.stringify(appUser));
+    } catch {}
+    closeAuthModal();
+  };
+
   const logout = async () => {
     try {
       await signOut(auth).catch(() => {});
@@ -221,6 +241,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         signInWithEmail,
         registerWithEmail,
         quickAuthorLogin,
+        quickReaderLogin,
         logout,
       }}
     >

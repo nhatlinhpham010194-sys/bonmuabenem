@@ -269,14 +269,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>{(user.displayName || user.email || 'M')[0].toUpperCase()}</span>
                   )}
                 </div>
-                <span className="hidden sm:inline font-serif truncate max-w-[85px]">
+                <span className="font-serif truncate max-w-[85px]">
                   {isAuthor ? '🌸 Mel' : (user.displayName || 'Độc giả')}
                 </span>
               </>
             ) : (
               <>
                 <UserIcon className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Đăng nhập</span>
+                <span className="inline font-medium">Đăng nhập</span>
               </>
             )}
           </button>
