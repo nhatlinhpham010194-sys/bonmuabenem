@@ -5,7 +5,6 @@ import {
   Sparkles,
   BookOpen,
   PlusCircle,
-  RotateCcw,
   CheckCircle2,
   AlertTriangle,
   Upload,
@@ -33,9 +32,6 @@ import {
   publishChapter,
   publishAnnouncement,
   deleteAnnouncement,
-  resetAllMetricsToZero,
-  seedSampleStoriesWithZeroStats,
-  clearAllStoriesAndChapters,
   subscribeToReaderLetters,
   replyToReaderLetter,
   deleteReaderLetter,
@@ -94,7 +90,7 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
   onStoriesUpdated,
 }) => {
   const { user, isAuthor, openAuthModal, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState<'reset' | 'newStory' | 'newChapter' | 'newAnnouncement' | 'letters' | 'manage'>('reset');
+  const [activeTab, setActiveTab] = useState<'newStory' | 'newChapter' | 'newAnnouncement' | 'letters' | 'manage'>('newStory');
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -221,58 +217,7 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
     }, 4500);
   };
 
-  // 1. Reset all metrics to 0
-  const handleResetMetrics = async () => {
-    if (!window.confirm('Xác nhận đưa toàn bộ số liệu về mặc định 0? Lượt truy cập, lượt xem, lượt thích, người theo dõi sẽ được tính lại từ đầu kể từ thời điểm này.')) {
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      await resetAllMetricsToZero();
-      showFeedback('success', '🌸 Đã đưa toàn bộ số liệu về mặc định (0) thành công! Mọi lượt xem, tim và người theo dõi từ giờ sẽ được tính thực tế từ độc giả.');
-      if (onStoriesUpdated) onStoriesUpdated();
-    } catch (err) {
-      showFeedback('error', 'Có lỗi xảy ra khi thiết lập số liệu. Vui lòng thử lại.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 2. Clear all stories & posts
-  const handleClearAllPosts = async () => {
-    if (!window.confirm('CẢNH BÁO: Thao tác này sẽ xóa toàn bộ bài đăng/truyện mẫu để đưa về trang trắng 100%. Bạn có chắc chắn không?')) {
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      await clearAllStoriesAndChapters();
-      showFeedback('success', '✓ Đã xóa toàn bộ bài viết mẫu! Trang web hiện đã ở chế độ trang trắng 100%, sẵn sàng cho bạn đăng bài viết đầu tiên.');
-      if (onStoriesUpdated) onStoriesUpdated();
-    } catch (err) {
-      showFeedback('error', 'Không thể xóa bài viết. Vui lòng kiểm tra lại.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 3. Seed template stories with 0 stats
-  const handleSeedTemplateStories = async () => {
-    if (!window.confirm('Khởi tạo 5 bộ truyện mẫu của nhà Mel với toàn bộ số liệu (lượt xem, lượt thích, bình luận) bằng 0?')) {
-      return;
-    }
-    setIsProcessing(true);
-    try {
-      await seedSampleStoriesWithZeroStats();
-      showFeedback('success', '✓ Đã nạp 5 bộ truyện mẫu với số liệu lượt xem = 0, lượt thích = 0 chuẩn xác!');
-      if (onStoriesUpdated) onStoriesUpdated();
-    } catch (err) {
-      showFeedback('error', 'Có lỗi khi nạp truyện mẫu.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  // 4. Publish New Story
+  // 1. Publish New Story
   const handleCreateStory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!storyTitle.trim() || !storyAuthor.trim()) {
@@ -527,19 +472,6 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
         <div className="flex border-b border-pink-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/50 px-6 gap-2 overflow-x-auto">
           <button
             type="button"
-            onClick={() => setActiveTab('reset')}
-            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
-              activeTab === 'reset'
-                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
-                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
-            }`}
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Xuất bản & Đưa về mặc định (0)</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => setActiveTab('newStory')}
             className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
               activeTab === 'newStory'
@@ -607,88 +539,7 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
         {/* Modal Body */}
         <div className="overflow-y-auto p-6 sm:p-8 space-y-6 custom-scrollbar">
           {/* ========================================================= */}
-          {/* TAB 1: RESET METRICS TO 0 (XUẤT BẢN WEBSITE CHÍNH THỨC)    */}
-          {/* ========================================================= */}
-          {activeTab === 'reset' && (
-            <div className="space-y-6">
-              {/* Publication Status Banner */}
-              <div className="p-6 rounded-2xl bg-gradient-to-br from-pink-50 via-rose-50 to-amber-50 dark:from-stone-800 dark:via-pink-950/20 dark:to-stone-800 border border-pink-200/80 dark:border-stone-700 space-y-3">
-                <div className="flex items-center gap-2 text-pink-700 dark:text-pink-300 font-serif font-bold text-lg">
-                  <Sparkles className="w-5 h-5 text-pink-500" />
-                  <span>Trạng thái xuất bản: Sẵn sàng đi vào hoạt động chính thức</span>
-                </div>
-                <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed font-sans">
-                  Khi xuất bản trang web, mọi con số ban đầu sẽ được đưa về mặc định (0) gồm: lượt truy cập, lượt theo dõi, lượt bình luận, lượt thích, và lượt xem của từng truyện. Toàn bộ các tương tác sẽ chỉ được ghi nhận thực tế từ độc giả ghé thăm kể từ thời điểm này!
-                </p>
-              </div>
-
-              {/* Action Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Action 1: Đưa toàn bộ số liệu về mặc định (0) */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-pink-200/70 dark:border-stone-700 shadow-xs flex flex-col justify-between space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-pink-600 dark:text-pink-400 font-semibold text-base">
-                      <RotateCcw className="w-4 h-4 text-pink-500" />
-                      <span>Đưa tất cả số liệu về mặc định 0</span>
-                    </div>
-                    <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
-                      Thiết lập lại lượt truy cập, lượt xem truyện, số tim, bình luận và người theo dõi về 0. Giữ nguyên danh sách truyện đang có và bắt đầu ghi nhận dữ liệu thật.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={handleResetMetrics}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-medium text-xs sm:text-sm shadow-sm transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>{isProcessing ? 'Đang xử lý...' : 'Đưa toàn bộ số liệu về 0 ngay'}</span>
-                  </button>
-                </div>
-
-                {/* Action 2: Dọn sạch bài viết về trang trắng 100% */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-amber-200/70 dark:border-stone-700 shadow-xs flex flex-col justify-between space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-semibold text-base">
-                      <Trash2 className="w-4 h-4 text-amber-500" />
-                      <span>Trang trắng 100% (Xóa bài viết mẫu)</span>
-                    </div>
-                    <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed">
-                      Xóa toàn bộ các truyện và thông báo mẫu. Trang web sẽ chỉ hiển thị những tác phẩm do chính tay bạn tạo và đăng tải kể từ lúc này.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={handleClearAllPosts}
-                    className="w-full py-2.5 px-4 rounded-xl bg-amber-50 hover:bg-amber-100 dark:bg-stone-700 dark:hover:bg-stone-600 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-stone-600 font-medium text-xs sm:text-sm transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    <span>{isProcessing ? 'Đang xử lý...' : 'Xóa bài mẫu để bắt đầu trang trắng'}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Template Restoration Option */}
-              <div className="p-4 rounded-2xl bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700 flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div className="text-xs text-stone-600 dark:text-stone-400">
-                  <strong className="block text-stone-800 dark:text-stone-200">Muốn dùng 5 bộ truyện mẫu của Mel làm khung sườn?</strong>
-                  Bấm nạp truyện mẫu với số lượt xem, lượt thích và bình luận được đặt sẵn bằng 0.
-                </div>
-                <button
-                  type="button"
-                  disabled={isProcessing}
-                  onClick={handleSeedTemplateStories}
-                  className="px-3 py-2 rounded-xl text-xs font-medium bg-white dark:bg-stone-700 border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-200 hover:bg-pink-50 transition-colors whitespace-nowrap cursor-pointer disabled:opacity-50"
-                >
-                  Nạp 5 truyện mẫu (Số liệu = 0)
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ========================================================= */}
-          {/* TAB 2: ĐĂNG TRUYỆN MỚI (NEW STORY)                         */}
+          {/* TAB 1: ĐĂNG TRUYỆN MỚI (NEW STORY)                         */}
           {/* ========================================================= */}
           {activeTab === 'newStory' && (
             <form onSubmit={handleCreateStory} className="space-y-5">

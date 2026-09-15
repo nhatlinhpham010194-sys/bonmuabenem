@@ -40,12 +40,34 @@ const getSessionVisitorId = (): string => {
 };
 
 /**
+ * Kiểm tra xem người dùng có đang truy cập qua đường liên kết chính thức (public URL / shared link / custom domain)
+ * hay trong môi trường sandbox nội bộ (localhost / ais-dev-).
+ * Đảm bảo các con số, số liệu thống kê chỉ được bắt đầu tính kể từ khi trang web chính thức được ra mắt, public và được tạo đường liên kết.
+ */
+export const isPublicOfficialSite = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  const isDevHost =
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host.startsWith('ais-dev-') ||
+    host.includes('.internal');
+  return !isDevHost;
+};
+
+/**
  * Record a real visit across any device and browser.
- * Starts from 1 (the current real visitor) instead of arbitrary fake numbers.
+ * Only begins counting visits when accessed via the official public link / domain.
+ * Starts from 1 (the first real public visitor) instead of arbitrary numbers.
  * Only increments totalVisits once per browser session.
  */
 export const recordSiteVisit = async (): Promise<void> => {
   try {
+    // Chỉ ghi nhận lượt truy cập khi website đã chính thức ra mắt / public
+    if (!isPublicOfficialSite()) {
+      return;
+    }
+
     const sessionKey = 'mel_visited_recorded';
     const alreadyRecorded = sessionStorage.getItem(sessionKey);
     const statsDocRef = doc(db, 'site_stats', STATS_DOC_ID);
@@ -56,7 +78,7 @@ export const recordSiteVisit = async (): Promise<void> => {
       const docSnap = await getDoc(statsDocRef);
       if (!docSnap.exists()) {
         await setDoc(statsDocRef, {
-          totalVisits: 1, // Real initial visitor
+          totalVisits: 1, // First real visitor on public launch
           totalFollowers: 0,
           totalComments: 0,
           totalLikes: 0,
@@ -187,8 +209,8 @@ export const subscribeToStoryStats = (
       if (docSnap.exists()) {
         const data = docSnap.data();
         callback({
-          views: (data.views ?? 0) + (initialViews || 0),
-          likes: (data.likes ?? 0) + (initialLikes || 0),
+          views: data.views !== undefined ? Number(data.views) : (initialViews || 0),
+          likes: data.likes !== undefined ? Number(data.likes) : (initialLikes || 0),
           followers: data.followers ?? 0,
           ratingSum: data.ratingSum ?? 0,
           ratingCount: data.ratingCount ?? 0,
@@ -221,9 +243,15 @@ export const subscribeToStoryStats = (
 
 /**
  * Increment story views when a reader views the story details or chapters.
+ * Only records views on the official public link / domain.
  */
 export const recordStoryView = async (storyId: string): Promise<void> => {
   try {
+    // Chỉ tăng lượt xem khi độc giả đọc truyện trên trang web chính thức / public link
+    if (!isPublicOfficialSite()) {
+      return;
+    }
+
     const sessionKey = `mel_viewed_story_${storyId}`;
     if (sessionStorage.getItem(sessionKey)) return;
     sessionStorage.setItem(sessionKey, 'true');
