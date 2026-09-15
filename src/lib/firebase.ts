@@ -20,6 +20,19 @@ import {
   serverTimestamp,
   type Firestore,
 } from 'firebase/firestore';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  type Auth,
+  type User,
+} from 'firebase/auth';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 // Initialize Firebase App singleton
@@ -29,6 +42,11 @@ const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db: Firestore = firebaseConfig.firestoreDatabaseId
   ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
   : getFirestore(app);
+
+// Initialize Firebase Auth
+export const auth: Auth = getAuth(app);
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 export {
   doc,
@@ -47,4 +65,14 @@ export {
   limit,
   addDoc,
   serverTimestamp,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInWithRedirect,
+  signOut,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  type User,
 };
+

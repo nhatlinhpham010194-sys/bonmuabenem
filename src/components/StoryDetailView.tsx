@@ -17,6 +17,10 @@ import {
   MessageSquare,
   BookmarkCheck,
   Send,
+  Reply,
+  Trash2,
+  CornerDownRight,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   subscribeToStoryStats,
@@ -25,8 +29,12 @@ import {
   submitStoryRating,
   subscribeToComments,
   postRealtimeComment,
+  postCommentReply,
+  deleteComment,
   recordStoryView,
 } from '../lib/realtimeService';
+import { useAuth } from '../lib/authContext';
+
 
 interface StoryDetailViewProps {
   story: Story;
@@ -71,12 +79,28 @@ export const StoryDetailView: React.FC<StoryDetailViewProps> = ({
     }
   });
 
+  const { user, isAuthor, openAuthModal } = useAuth();
+
   // Comments state
   const [comments, setComments] = useState<RealtimeComment[]>([]);
   const [newCommentText, setNewCommentText] = useState('');
   const [authorName, setAuthorName] = useState('');
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
   const [isCopiedShare, setIsCopiedShare] = useState(false);
+
+  // Reply & moderation state
+  const [replyingCommentId, setReplyingCommentId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      if (isAuthor) setAuthorName('Mellifluous (Tác giả)');
+      else if (user.displayName) setAuthorName(user.displayName);
+      else if (user.email) setAuthorName(user.email.split('@')[0]);
+    }
+  }, [user, isAuthor]);
+
 
   useEffect(() => {
     // Record view in Firestore
@@ -148,9 +172,12 @@ export const StoryDetailView: React.FC<StoryDetailViewProps> = ({
     try {
       await postRealtimeComment({
         storyId: story.id,
-        user: authorName.trim() || 'Bạn đọc yêu truyện',
+        user: authorName.trim() || (isAuthor ? 'Mellifluous (Tác giả)' : (user?.displayName || 'Bạn đọc yêu truyện')),
+        userEmail: user?.email,
+        userId: user?.uid,
+        isAuthor: Boolean(isAuthor),
+        avatar: isAuthor ? '🌸' : (user?.photoURL || '🌸'),
         text: newCommentText.trim(),
-        avatar: '🌸',
         rating: userRating || undefined,
       });
       setNewCommentText('');
@@ -160,6 +187,36 @@ export const StoryDetailView: React.FC<StoryDetailViewProps> = ({
       setIsSubmittingComment(false);
     }
   };
+
+  const handleSendReply = async (commentId: string) => {
+    if (!replyText.trim() || isSubmittingReply) return;
+    setIsSubmittingReply(true);
+    try {
+      await postCommentReply(commentId, {
+        user: isAuthor ? 'Mellifluous (Tác giả)' : (user?.displayName || authorName.trim() || 'Bạn đọc'),
+        text: replyText.trim(),
+        avatar: isAuthor ? '🌸' : '💬',
+        isAuthor: Boolean(isAuthor),
+        userEmail: user?.email,
+      });
+      setReplyText('');
+      setReplyingCommentId(null);
+    } catch (err) {
+      console.error('Failed to reply:', err);
+    } finally {
+      setIsSubmittingReply(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!window.confirm('Xác nhận xóa bình luận này?')) return;
+    try {
+      await deleteComment(commentId);
+    } catch (err) {
+      console.error('Failed to delete comment:', err);
+    }
+  };
+
 
   const mainChapters = chapters.filter((c) => !c.isExtra && c.partType !== 'extra');
   const extraChapters = chapters.filter((c) => c.isExtra || c.partType === 'extra');
@@ -604,6 +661,32 @@ export const StoryDetailView: React.FC<StoryDetailViewProps> = ({
           </span>
         </div>
 
+        {/* Active auth status or prompt */}
+        <div className="flex items-center justify-between text-xs px-1">
+          {user ? (
+            <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Đang bình luận dưới tên:</span>
+              <strong className="text-pink-600 dark:text-pink-400 font-semibold">
+                {isAuthor ? '🌸 Mellifluous (Tác giả)' : (user.displayName || user.email)}
+              </strong>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <span className="text-stone-500 dark:text-stone-400 text-[11px]">
+                Bạn có thể bình luận trực tiếp hoặc đăng nhập Google để lưu dấu ấn:
+              </span>
+              <button
+                type="button"
+                onClick={openAuthModal}
+                className="text-[11px] font-semibold text-pink-600 hover:text-pink-700 dark:text-pink-400 underline cursor-pointer"
+              >
+                Đăng nhập
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Post comment form */}
         <form onSubmit={handleSendComment} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -645,29 +728,145 @@ export const StoryDetailView: React.FC<StoryDetailViewProps> = ({
             comments.map((cmt) => (
               <div
                 key={cmt.id}
-                className="p-4 rounded-2xl bg-stone-50/70 dark:bg-stone-900/60 border border-stone-200/60 dark:border-stone-700/60 flex items-start gap-3"
+                className={`p-4 rounded-2xl border space-y-3 transition-colors ${
+                  cmt.isAuthor
+                    ? 'bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/50'
+                    : 'bg-stone-50/70 dark:bg-stone-900/60 border-stone-200/60 dark:border-stone-700/60'
+                }`}
               >
-                <div className="w-8 h-8 rounded-full bg-pink-100 dark:bg-pink-950 text-pink-600 flex items-center justify-center text-sm shrink-0">
-                  {cmt.avatar || '🌸'}
-                </div>
-                <div className="flex-1 space-y-1 min-w-0">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold font-serif text-stone-800 dark:text-stone-200">
-                      {cmt.user}
-                    </span>
-                    <span className="text-[11px] font-mono text-stone-400">
-                      {cmt.createdAt ? new Date(cmt.createdAt).toLocaleDateString('vi-VN') : 'Mới đây'}
-                    </span>
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center text-sm shrink-0 ${
+                      cmt.isAuthor
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200 ring-2 ring-rose-400/40'
+                        : 'bg-pink-100 dark:bg-pink-950 text-pink-600'
+                    }`}
+                  >
+                    {cmt.avatar || '🌸'}
                   </div>
-                  <p className="text-xs sm:text-[13px] text-stone-700 dark:text-stone-300 leading-relaxed font-sans break-words">
-                    {cmt.text}
-                  </p>
+                  <div className="flex-1 space-y-1 min-w-0">
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold font-serif text-stone-800 dark:text-stone-200 truncate">
+                          {cmt.user}
+                        </span>
+                        {cmt.isAuthor && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/80 dark:text-rose-200 border border-rose-300/60 shrink-0">
+                            🌸 Tác giả
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] font-mono text-stone-400 shrink-0">
+                        {cmt.createdAt ? new Date(cmt.createdAt).toLocaleDateString('vi-VN') : 'Mới đây'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs sm:text-[13px] text-stone-700 dark:text-stone-300 leading-relaxed font-sans break-words">
+                      {cmt.text}
+                    </p>
+
+                    {/* Actions: Reply and Delete */}
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReplyingCommentId(replyingCommentId === cmt.id ? null : cmt.id);
+                          setReplyText('');
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-pink-600 hover:text-pink-700 dark:text-pink-400 cursor-pointer"
+                      >
+                        <Reply className="w-3 h-3" />
+                        <span>{replyingCommentId === cmt.id ? 'Hủy trả lời' : 'Trả lời'}</span>
+                      </button>
+
+                      {isAuthor && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(cmt.id)}
+                          className="inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+                          title="Xóa bình luận này (Quyền tác giả)"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Xóa</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
+
+                {/* Nested Replies */}
+                {cmt.replies && cmt.replies.length > 0 && (
+                  <div className="pl-6 sm:pl-8 space-y-2 border-l-2 border-pink-200/60 dark:border-stone-700 ml-4 my-1">
+                    {cmt.replies.map((rep) => (
+                      <div
+                        key={rep.id}
+                        className={`p-2.5 rounded-xl text-xs space-y-1 ${
+                          rep.isAuthor
+                            ? 'bg-rose-100/60 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50'
+                            : 'bg-white dark:bg-stone-800 border border-stone-200/60 dark:border-stone-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <CornerDownRight className="w-3 h-3 text-pink-500 shrink-0" />
+                            <span className="font-semibold">{rep.user}</span>
+                            {rep.isAuthor && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-200">
+                                🌸 Tác giả
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] font-mono text-stone-400">
+                            {new Date(rep.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="pl-4 font-sans text-xs text-stone-700 dark:text-stone-300">
+                          {rep.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Inline Reply Form */}
+                {replyingCommentId === cmt.id && (
+                  <div className="pl-6 sm:pl-8 pt-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder={
+                          isAuthor
+                            ? 'Mellifluous phản hồi bạn đọc...'
+                            : 'Nhập phản hồi của bạn...'
+                        }
+                        className="flex-1 px-3 py-1.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs focus:ring-2 focus:ring-pink-400 focus:outline-hidden"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSendReply(cmt.id);
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSendReply(cmt.id)}
+                        disabled={isSubmittingReply || !replyText.trim()}
+                        className="px-3 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white text-xs font-medium cursor-pointer shrink-0"
+                      >
+                        {isSubmittingReply ? 'Đang gửi...' : 'Gửi'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}
         </div>
       </section>
+
     </div>
   );
 };

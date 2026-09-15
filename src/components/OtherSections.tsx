@@ -18,63 +18,26 @@ import {
   Volume2,
   VolumeX,
   SkipForward,
+  Reply,
+  Trash2,
+  KeyRound,
+  Search,
 } from 'lucide-react';
 import { PLAYLIST } from '../data/mockData';
 import { bgmEngine, AudioTrack, TRACK_LIST } from '../utils/audioPlayer';
-
-interface PublicLetter {
-  id: string;
-  sender: string;
-  content: string;
-  type: 'public' | 'private';
-  tag: string;
-  time: string;
-  avatar: string;
-  likes: number;
-  replyFromMel?: string;
-}
-
-const INITIAL_PUBLIC_LETTERS: PublicLetter[] = [
-  {
-    id: 'l-1',
-    sender: 'Tiểu Mộc Lan',
-    content:
-      'Cảm ơn Mel rất nhiều vì đã đem đến câu chuyện "Chỉ Là Chút Tình Cờ". Từng câu từng chữ êm dịu như một cơn mưa rào giữa ngày hè oi bức. Chúc Mel luôn dồi dào sức khỏe và giữ mãi ngọn lửa đam mê nhé!',
-    type: 'public',
-    tag: '🌸 Lời chúc & Cảm ơn',
-    time: '2 giờ trước',
-    avatar: '🌸',
-    likes: 28,
-    replyFromMel: 'Cảm ơn Mộc Lan nhiều nha! Những lời động viên như này là động lực to lớn nhất để Mel gõ truyện mỗi tối đó ạ ♡',
-  },
-  {
-    id: 'l-2',
-    sender: 'Hạ Vy 17',
-    content:
-      'Nhờ có blog của Mel mà những đêm ôn thi đại học của mình bớt cô đơn hơn hẳn. Mở playlist mùa hạ, đọc một chương truyện rồi đi ngủ thật ngon. Mãi yêu chiếc thuyền nhỏ này!',
-    type: 'public',
-    tag: '☕ Tâm sự mùa hè',
-    time: 'Hôm qua',
-    avatar: '🍧',
-    likes: 42,
-    replyFromMel: 'Chúc Hạ Vy làm bài thi thật tốt và đạt được nguyện vọng 1 nhé, Mel luôn cổ vũ cho bạn!',
-  },
-  {
-    id: 'l-3',
-    sender: 'Độc giả trà sữa',
-    content:
-      'Gợi ý cho Mel một bộ thanh xuân vườn trường có tên là "Gặp Lại Khi Ve Kêu" siêu ngọt ngào. Nếu có dịp Mel thử ngó qua xem có hợp gu không nhé!',
-    type: 'public',
-    tag: '📖 Đề xuất truyện mới',
-    time: '3 ngày trước',
-    avatar: '🧋',
-    likes: 19,
-    replyFromMel: 'Mel đã ghi lại tên truyện vào sổ tay rồi nè, để cuối tuần rảnh Mel tìm đọc thử nhé!',
-  },
-];
+import {
+  subscribeToReaderLetters,
+  sendReaderLetter,
+  replyToReaderLetter,
+  deleteReaderLetter,
+  toggleLetterLike,
+  ReaderLetter,
+} from '../lib/realtimeService';
+import { useAuth } from '../lib/authContext';
 
 export const OtherSections: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'diary' | 'music' | 'faq'>('diary');
+  const { user, isAuthor, openAuthModal } = useAuth();
 
   // Background Music state
   const [isBgmPlaying, setIsBgmPlaying] = useState(false);
@@ -96,20 +59,35 @@ export const OtherSections: React.FC = () => {
   const [guestMessage, setGuestMessage] = useState('');
   const [selectedTag, setSelectedTag] = useState('🌸 Lời chúc & Cảm ơn');
   const [sentSuccessType, setSentSuccessType] = useState<'public' | 'private' | null>(null);
+  const [createdSecretCode, setCreatedSecretCode] = useState<string | null>(null);
+  const [isSubmittingLetter, setIsSubmittingLetter] = useState(false);
 
-  // Stored public letters
-  const [publicLetters, setPublicLetters] = useState<PublicLetter[]>(() => {
-    try {
-      const saved = localStorage.getItem('better_letters_public');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-      // Fallback
+  // Stored public and private letters from Firestore
+  const [letters, setLetters] = useState<ReaderLetter[]>([]);
+  const [authorMailboxTab, setAuthorMailboxTab] = useState<'public' | 'private'>('public');
+
+  // Reader private letter lookup state
+  const [lookupInputCode, setLookupInputCode] = useState('');
+  const [lookedUpLetter, setLookedUpLetter] = useState<ReaderLetter | null>(null);
+  const [lookupError, setLookupError] = useState('');
+
+  // Author inline reply state
+  const [replyingLetterId, setReplyingLetterId] = useState<string | null>(null);
+  const [authorReplyText, setAuthorReplyText] = useState('');
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+
+  useEffect(() => {
+    if (user && !guestSender) {
+      setGuestSender(user.displayName || user.email.split('@')[0]);
     }
-    return INITIAL_PUBLIC_LETTERS;
-  });
+  }, [user]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToReaderLetters((list) => {
+      setLetters(list);
+    });
+    return unsubscribe;
+  }, []);
 
   const availableTags = [
     '🌸 Lời chúc & Cảm ơn',
@@ -118,50 +96,90 @@ export const OtherSections: React.FC = () => {
     '💭 Trải lòng thầm kín',
   ];
 
-  const handleSendConfession = (e: React.FormEvent) => {
+  const handleSendConfession = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!guestMessage.trim()) return;
+    if (!guestMessage.trim() || isSubmittingLetter) return;
 
-    const senderName = guestSender.trim() || 'Bạn Đọc Ẩn Danh';
+    const senderName = guestSender.trim() || (user?.displayName || 'Bạn Đọc Ẩn Danh');
+    setIsSubmittingLetter(true);
+    setCreatedSecretCode(null);
 
-    if (letterType === 'public') {
-      const newLetter: PublicLetter = {
-        id: `user-${Date.now()}`,
+    try {
+      const result = await sendReaderLetter({
         sender: senderName,
         content: guestMessage.trim(),
-        type: 'public',
+        type: letterType,
         tag: selectedTag,
-        time: 'Vừa xong',
-        avatar: '💌',
-        likes: 1,
-        replyFromMel: 'Mel đã đọc được lá thư công khai của bạn và gửi một cái ôm thật ấm áp! 🌸',
-      };
-      const updated = [newLetter, ...publicLetters];
-      setPublicLetters(updated);
-      try {
-        localStorage.setItem('better_letters_public', JSON.stringify(updated));
-      } catch {
-        // storage fallback
+        avatar: user?.photoURL || (letterType === 'public' ? '🌸' : '💌'),
+        userEmail: user?.email,
+        userId: user?.uid,
+      });
+
+      if (letterType === 'private' && result.secretLookupCode) {
+        setCreatedSecretCode(result.secretLookupCode);
+        setSentSuccessType('private');
+      } else {
+        setSentSuccessType('public');
       }
-      setSentSuccessType('public');
-    } else {
-      // Private letter sealed exclusively to Mel
-      setSentSuccessType('private');
+
+      setGuestMessage('');
+    } catch (err) {
+      console.error('Failed to send letter:', err);
+    } finally {
+      setIsSubmittingLetter(false);
+      setTimeout(() => {
+        setSentSuccessType(null);
+      }, 10000);
     }
-
-    setGuestMessage('');
-    setGuestSender('');
-
-    setTimeout(() => {
-      setSentSuccessType(null);
-    }, 6000);
   };
 
-  const handleLikeLetter = (id: string) => {
-    setPublicLetters((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, likes: l.likes + 1 } : l))
+  const handleLikeLetter = async (id: string) => {
+    try {
+      await toggleLetterLike(id);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSendAuthorReply = async (letterId: string) => {
+    if (!authorReplyText.trim() || isSubmittingReply) return;
+    setIsSubmittingReply(true);
+    try {
+      await replyToReaderLetter(letterId, authorReplyText.trim(), 'Mellifluous (Tác giả)');
+      setAuthorReplyText('');
+      setReplyingLetterId(null);
+    } catch (err) {
+      console.error('Failed to reply letter:', err);
+    } finally {
+      setIsSubmittingReply(false);
+    }
+  };
+
+  const handleDeleteLetter = async (id: string) => {
+    if (!window.confirm('Xác nhận xóa bức thư này?')) return;
+    try {
+      await deleteReaderLetter(id);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleLookupPrivateLetter = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLookupError('');
+    setLookedUpLetter(null);
+    const code = lookupInputCode.trim().toUpperCase();
+    if (!code) return;
+    const match = letters.find(
+      (l) => l.type === 'private' && l.secretLookupCode?.toUpperCase() === code
     );
+    if (match) {
+      setLookedUpLetter(match);
+    } else {
+      setLookupError('Không tìm thấy bức thư với mã này. Hãy kiểm tra lại mã niêm phong nhé!');
+    }
   };
+
 
   return (
     <div id="other-sections-view" className="space-y-8 animate-in fade-in duration-300 pb-12">
@@ -385,115 +403,322 @@ export const OtherSections: React.FC = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                 {sentSuccessType === 'public' ? (
                   <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 text-xs font-medium flex items-center gap-2 animate-in fade-in">
-                    <Check className="w-4 h-4 text-emerald-600" />
-                    <span>Đã ghim mẩu thư công khai của bạn lên Bảng tin bên dưới! 🌸</span>
+                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Đã ghim bức thư của bạn lên Hòm thư công khai! 🌸</span>
                   </div>
                 ) : sentSuccessType === 'private' ? (
-                  <div className="p-3 rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-900 dark:text-purple-200 text-xs font-medium flex items-center gap-2 animate-in fade-in">
-                    <Lock className="w-4 h-4 text-purple-600" />
-                    <span>
-                      Đã niêm phong sáp và gửi vào hòm thư bí mật của Mel! Chỉ Mel mới đọc được lá thư này 💌
-                    </span>
+                  <div className="p-3.5 rounded-xl bg-purple-100 dark:bg-purple-950 text-purple-900 dark:text-purple-200 text-xs font-medium flex flex-col gap-1.5 animate-in fade-in">
+                    <div className="flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-purple-600 shrink-0" />
+                      <span className="font-bold">
+                        Đã niêm phong sáp và gửi vào hòm thư bí mật của Mel!
+                      </span>
+                    </div>
+                    {createdSecretCode && (
+                      <div className="text-[11px] text-purple-800 dark:text-purple-300 font-sans">
+                        Mã tra cứu thư của bạn: <strong className="font-mono text-purple-900 dark:text-purple-100 bg-white/70 dark:bg-stone-800 px-2 py-0.5 rounded-md border border-purple-300">{createdSecretCode}</strong>. Bạn hãy lưu lại mã này để tra cứu phản hồi từ Mel nhé!
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <span className="text-[11px] text-stone-400 font-sans italic">
                     {letterType === 'public'
                       ? '*Thư công khai sẽ hiển thị ngay trên bảng tin'
-                      : '*Thư thầm kín được lưu trữ riêng tư, không công khai'}
+                      : '*Thư thầm kín được bảo mật tuyệt đối, chỉ Mel đọc được'}
                   </span>
                 )}
 
                 <button
                   type="submit"
                   id="submit-letter-btn"
+                  disabled={isSubmittingLetter}
                   className={`px-6 py-2.5 rounded-xl text-white text-xs sm:text-sm font-medium flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer ${
+                    isSubmittingLetter ? 'opacity-50 cursor-not-allowed' : ''
+                  } ${
                     letterType === 'public'
                       ? 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600'
                       : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'
                   }`}
                 >
                   <Send className="w-4 h-4" />
-                  <span>{letterType === 'public' ? 'Gửi thư công khai 💌' : 'Gửi thư thầm kín 🔒'}</span>
+                  <span>{isSubmittingLetter ? 'Đang gửi thư...' : letterType === 'public' ? 'Gửi thư công khai 💌' : 'Gửi thư thầm kín 🔒'}</span>
                 </button>
               </div>
             </form>
           </div>
 
-          {/* BẢNG THƯ CÔNG KHAI TỪ ĐỘC GIẢ */}
+          {/* HỘP TRA CỨU THƯ THẦM KÍN DÀNH CHO ĐỘC GIẢ */}
+          <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-purple-50/70 to-pink-50/70 dark:from-stone-800/80 dark:to-purple-950/30 border border-purple-200 dark:border-stone-700 space-y-3">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+              <h4 className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-200">
+                Tra cứu thư thầm kín của bạn
+              </h4>
+            </div>
+            <p className="text-[11px] text-stone-500 dark:text-stone-400">
+              Nhập mã niêm phong (ví dụ: <span className="font-mono font-semibold">MEL-12345</span>) bạn đã nhận khi gửi thư riêng tư để xem phản hồi từ Mel:
+            </p>
+            <form onSubmit={handleLookupPrivateLetter} className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={lookupInputCode}
+                onChange={(e) => setLookupInputCode(e.target.value)}
+                placeholder="Nhập mã niêm phong thư (MEL-...)"
+                className="flex-1 px-3 py-2 rounded-xl bg-white dark:bg-stone-900 border border-purple-200 dark:border-stone-700 text-xs font-mono text-stone-800 dark:text-stone-100 focus:outline-hidden focus:ring-2 focus:ring-purple-400"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-2xs"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Tra cứu thư</span>
+              </button>
+            </form>
+
+            {lookupError && (
+              <p className="text-xs text-rose-600 dark:text-rose-400 font-sans">{lookupError}</p>
+            )}
+
+            {lookedUpLetter && (
+              <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-purple-200 dark:border-purple-800/60 space-y-2.5 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-bold text-purple-700 dark:text-purple-300">
+                    🔒 Thư gửi bởi: {lookedUpLetter.sender}
+                  </span>
+                  <span className="text-stone-400 font-mono text-[11px]">{lookedUpLetter.time}</span>
+                </div>
+                <p className="font-serif italic text-xs sm:text-sm text-stone-700 dark:text-stone-300">
+                  "{lookedUpLetter.content}"
+                </p>
+                {lookedUpLetter.replyFromMel ? (
+                  <div className="p-3 rounded-lg bg-pink-50 dark:bg-pink-950/50 border border-pink-200 dark:border-pink-900 text-xs space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold text-pink-700 dark:text-pink-300">
+                      <span>🌸</span>
+                      <span>Hồi đáp riêng từ Mel:</span>
+                    </div>
+                    <p className="text-stone-700 dark:text-stone-200 pl-4">{lookedUpLetter.replyFromMel}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-400 italic">
+                    ⏳ Mel đã nhận được thư và sẽ sớm hồi đáp cho bạn nhé!
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* BẢNG THƯ TỪ ĐỘC GIẢ */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-stone-200 dark:border-stone-700 pb-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-200 dark:border-stone-700 pb-2.5 gap-2">
               <div className="flex items-center gap-2">
                 <span className="text-xl">💌</span>
                 <h3 className="font-serif text-lg sm:text-xl font-bold text-stone-800 dark:text-stone-100">
-                  Bảng Thư Công Khai Nhà Mel
+                  {isAuthor && authorMailboxTab === 'private'
+                    ? 'Hòm Thư Thầm Kín Độc Giả (Bảo mật Tác giả)'
+                    : 'Bảng Thư Công Khai Nhà Mel'}
                 </h3>
               </div>
-              <span className="text-xs text-stone-500 dark:text-stone-400 font-sans">
-                {publicLetters.length} bức thư đã gửi
-              </span>
-            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {publicLetters.map((letter) => (
-                <div
-                  key={letter.id}
-                  className="p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-pink-100 dark:border-stone-700 shadow-2xs space-y-3 flex flex-col justify-between"
-                >
-                  <div className="space-y-2">
-                    {/* Header of letter */}
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base select-none">{letter.avatar}</span>
-                        <strong className="font-sans font-semibold text-stone-800 dark:text-stone-200">
-                          {letter.sender}
-                        </strong>
-                      </div>
-                      <span className="text-stone-400 font-mono text-[11px]">{letter.time}</span>
-                    </div>
-
-                    {/* Tag badge */}
-                    <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
-                      {letter.tag}
-                    </span>
-
-                    {/* Content */}
-                    <p className="font-serif text-xs sm:text-sm text-stone-700 dark:text-stone-300 leading-relaxed italic">
-                      "{letter.content}"
-                    </p>
-
-                    {/* Mel's Warm Reply if present */}
-                    {letter.replyFromMel && (
-                      <div className="mt-3 p-3 rounded-xl bg-pink-50/80 dark:bg-pink-950/40 border border-pink-100 dark:border-pink-900/40 text-xs space-y-1">
-                        <div className="flex items-center gap-1.5 font-semibold text-pink-700 dark:text-pink-300">
-                          <span>🌸</span>
-                          <span>Lời nhắn từ Mel:</span>
-                        </div>
-                        <p className="text-stone-600 dark:text-stone-300 font-sans pl-5">
-                          {letter.replyFromMel}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Letter Footer */}
-                  <div className="pt-2 border-t border-stone-100 dark:border-stone-700/80 flex items-center justify-between text-xs">
-                    <span className="text-stone-400 text-[11px] flex items-center gap-1">
-                      <Globe className="w-3 h-3 text-stone-400" />
-                      <span>Thư công khai</span>
-                    </span>
-
+              <div className="flex items-center gap-2">
+                {isAuthor && (
+                  <div className="flex items-center p-1 rounded-xl bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700">
                     <button
                       type="button"
-                      onClick={() => handleLikeLetter(letter.id)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-pink-50 dark:hover:bg-stone-700 text-stone-500 hover:text-pink-600 dark:text-stone-400 dark:hover:text-pink-400 transition-colors cursor-pointer"
+                      onClick={() => setAuthorMailboxTab('public')}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer ${
+                        authorMailboxTab === 'public'
+                          ? 'bg-pink-500 text-white shadow-2xs'
+                          : 'text-stone-600 dark:text-stone-300'
+                      }`}
                     >
-                      <Heart className="w-3.5 h-3.5 text-pink-500 fill-pink-500" />
-                      <span className="font-sans font-medium">{letter.likes}</span>
+                      Thư công khai ({letters.filter((l) => l.type === 'public').length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAuthorMailboxTab('private')}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer ${
+                        authorMailboxTab === 'private'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'text-stone-600 dark:text-stone-300'
+                      }`}
+                    >
+                      🔒 Thư thầm kín ({letters.filter((l) => l.type === 'private').length})
                     </button>
                   </div>
-                </div>
-              ))}
+                )}
+                <span className="text-xs text-stone-500 dark:text-stone-400 font-sans">
+                  {isAuthor && authorMailboxTab === 'private'
+                    ? `${letters.filter((l) => l.type === 'private').length} bức thư bí mật`
+                    : `${letters.filter((l) => l.type === 'public').length} bức thư đã gửi`}
+                </span>
+              </div>
             </div>
+
+            {/* List of letters */}
+            {letters.filter((l) => (isAuthor && authorMailboxTab === 'private' ? l.type === 'private' : l.type === 'public')).length === 0 ? (
+              <div className="text-center py-12 bg-white/60 dark:bg-stone-800/60 rounded-2xl border border-dashed border-stone-200 dark:border-stone-700 text-stone-500 text-xs sm:text-sm">
+                🌸 Chưa có bức thư nào. Hãy là người đầu tiên gửi những tâm sự ngọt ngào đến Mel nhé!
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {letters
+                  .filter((l) => (isAuthor && authorMailboxTab === 'private' ? l.type === 'private' : l.type === 'public'))
+                  .map((letter) => (
+                    <div
+                      key={letter.id}
+                      className="p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-pink-100 dark:border-stone-700 shadow-2xs space-y-3 flex flex-col justify-between"
+                    >
+                      <div className="space-y-2">
+                        {/* Header of letter */}
+                        <div className="flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            {letter.avatar.startsWith('http') ? (
+                              <img
+                                src={letter.avatar}
+                                alt={letter.sender}
+                                className="w-5 h-5 rounded-full object-cover border border-pink-200"
+                              />
+                            ) : (
+                              <span className="text-base select-none">{letter.avatar}</span>
+                            )}
+                            <strong className="font-sans font-semibold text-stone-800 dark:text-stone-200">
+                              {letter.sender}
+                            </strong>
+                            {letter.userEmail && isAuthor && (
+                              <span className="text-[10px] text-stone-400 font-mono">({letter.userEmail})</span>
+                            )}
+                          </div>
+                          <span className="text-stone-400 font-mono text-[11px]">{letter.time}</span>
+                        </div>
+
+                        {/* Tag badge & Code */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-block text-[10px] font-medium px-2 py-0.5 rounded-md bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300">
+                            {letter.tag}
+                          </span>
+                          {letter.type === 'private' && letter.secretLookupCode && isAuthor && (
+                            <span className="inline-block text-[10px] font-mono px-2 py-0.5 rounded-md bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                              Mã: {letter.secretLookupCode}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Content */}
+                        <p className="font-serif text-xs sm:text-sm text-stone-700 dark:text-stone-300 leading-relaxed italic">
+                          "{letter.content}"
+                        </p>
+
+                        {/* Mel's Warm Reply if present */}
+                        {letter.replyFromMel && (
+                          <div className="mt-3 p-3 rounded-xl bg-pink-50/80 dark:bg-pink-950/40 border border-pink-100 dark:border-pink-900/40 text-xs space-y-1">
+                            <div className="flex items-center gap-1.5 font-semibold text-pink-700 dark:text-pink-300">
+                              <span>🌸</span>
+                              <span>Lời nhắn từ Mel:</span>
+                            </div>
+                            <p className="text-stone-600 dark:text-stone-300 font-sans pl-5">
+                              {letter.replyFromMel}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Author inline reply box */}
+                        {isAuthor && replyingLetterId === letter.id && (
+                          <div className="mt-3 p-3 rounded-xl bg-amber-50/80 dark:bg-stone-900 border border-amber-200 dark:border-stone-700 space-y-2 animate-in fade-in">
+                            <label className="block text-[11px] font-semibold text-amber-900 dark:text-amber-200">
+                              Viết phản hồi của Tác giả:
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={authorReplyText}
+                              onChange={(e) => setAuthorReplyText(e.target.value)}
+                              placeholder="Nhập lời cảm ơn, lời nhắn gửi ấm áp của Mel..."
+                              className="w-full p-2.5 text-xs rounded-lg bg-white dark:bg-stone-800 border border-amber-200 dark:border-stone-700 text-stone-800 dark:text-stone-100 focus:ring-2 focus:ring-amber-400 focus:outline-hidden"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyingLetterId(null);
+                                  setAuthorReplyText('');
+                                }}
+                                className="px-3 py-1 text-xs rounded-lg text-stone-600 hover:bg-stone-200 dark:text-stone-400 dark:hover:bg-stone-700 cursor-pointer"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isSubmittingReply}
+                                onClick={() => handleSendAuthorReply(letter.id)}
+                                className="px-3 py-1 text-xs rounded-lg bg-pink-500 hover:bg-pink-600 text-white font-medium cursor-pointer shadow-2xs flex items-center gap-1"
+                              >
+                                <Send className="w-3 h-3" />
+                                <span>{isSubmittingReply ? 'Đang gửi...' : 'Gửi phản hồi'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Letter Footer */}
+                      <div className="pt-2 border-t border-stone-100 dark:border-stone-700/80 flex items-center justify-between text-xs">
+                        <span className="text-stone-400 text-[11px] flex items-center gap-1">
+                          {letter.type === 'public' ? (
+                            <>
+                              <Globe className="w-3 h-3 text-stone-400" />
+                              <span>Thư công khai</span>
+                            </>
+                          ) : (
+                            <>
+                              <Lock className="w-3 h-3 text-purple-400" />
+                              <span className="text-purple-600 dark:text-purple-400 font-medium">Thư thầm kín</span>
+                            </>
+                          )}
+                        </span>
+
+                        <div className="flex items-center gap-2">
+                          {/* Author Reply Action */}
+                          {isAuthor && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyingLetterId(letter.id);
+                                  setAuthorReplyText(letter.replyFromMel || '');
+                                }}
+                                className="px-2 py-1 rounded-md text-[11px] font-medium text-pink-600 hover:bg-pink-50 dark:hover:bg-stone-700 flex items-center gap-1 cursor-pointer"
+                                title="Phản hồi bức thư này"
+                              >
+                                <Reply className="w-3 h-3" />
+                                <span>{letter.replyFromMel ? 'Sửa phản hồi' : 'Phản hồi'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLetter(letter.id)}
+                                className="p-1 rounded-md text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-stone-700 cursor-pointer"
+                                title="Xóa thư"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
+                          )}
+
+                          {letter.type === 'public' && (
+                            <button
+                              type="button"
+                              onClick={() => handleLikeLetter(letter.id)}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded-lg hover:bg-pink-50 dark:hover:bg-stone-700 text-stone-500 hover:text-pink-600 dark:text-stone-400 dark:hover:text-pink-400 transition-colors cursor-pointer"
+                            >
+                              <Heart className="w-3.5 h-3.5 text-pink-500 fill-pink-500" />
+                              <span className="font-sans font-medium">{letter.likes}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
           </div>
         </div>
       )}

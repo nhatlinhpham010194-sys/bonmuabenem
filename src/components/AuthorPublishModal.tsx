@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Story, Chapter, Announcement } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Story, Chapter, Announcement, ReaderLetter } from '../types';
 import {
   X,
   Sparkles,
@@ -20,6 +20,12 @@ import {
   Bookmark,
   Layers,
   Check,
+  Mail,
+  Send,
+  Reply,
+  ShieldCheck,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
 import {
   publishStory,
@@ -30,7 +36,11 @@ import {
   resetAllMetricsToZero,
   seedSampleStoriesWithZeroStats,
   clearAllStoriesAndChapters,
+  subscribeToReaderLetters,
+  replyToReaderLetter,
+  deleteReaderLetter,
 } from '../lib/realtimeService';
+import { useAuth } from '../lib/authContext';
 
 interface AuthorPublishModalProps {
   isOpen: boolean;
@@ -83,9 +93,25 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
   announcements,
   onStoriesUpdated,
 }) => {
-  const [activeTab, setActiveTab] = useState<'reset' | 'newStory' | 'newChapter' | 'newAnnouncement' | 'manage'>('reset');
+  const { user, isAuthor, openAuthModal, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState<'reset' | 'newStory' | 'newChapter' | 'newAnnouncement' | 'letters' | 'manage'>('reset');
   const [isProcessing, setIsProcessing] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Reader Letters state in Studio
+  const [letters, setLetters] = useState<ReaderLetter[]>([]);
+  const [letterFilter, setLetterFilter] = useState<'all' | 'unanswered' | 'private' | 'public'>('all');
+  const [replyingLetterId, setReplyingLetterId] = useState<string | null>(null);
+  const [authorReplyInput, setAuthorReplyInput] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !isAuthor) return;
+    const unsubscribe = subscribeToReaderLetters((list) => {
+      setLetters(list);
+    });
+    return unsubscribe;
+  }, [isOpen, isAuthor]);
 
   // New Story Form State
   const [storyTitle, setStoryTitle] = useState('');
@@ -118,6 +144,75 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
   const [annIsPinned, setAnnIsPinned] = useState(true);
 
   if (!isOpen) return null;
+
+  // Gatekeeper: Only authorized authors and collaborators can access Studio
+  if (!isAuthor) {
+    return (
+      <div
+        id="author-access-denied-modal"
+        className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+      >
+        <div className="w-full max-w-md bg-white dark:bg-stone-900 rounded-3xl p-6 sm:p-8 border border-pink-200 dark:border-stone-700 shadow-2xl space-y-6 text-center animate-in zoom-in-95">
+          <div className="w-16 h-16 rounded-2xl bg-pink-100 dark:bg-pink-950 text-pink-600 flex items-center justify-center mx-auto shadow-xs">
+            <Lock className="w-8 h-8" />
+          </div>
+
+          <div className="space-y-2">
+            <h3 className="font-serif text-xl font-bold text-stone-900 dark:text-stone-100">
+              Khu vực dành riêng cho Tác giả
+            </h3>
+            <p className="text-xs sm:text-sm text-stone-600 dark:text-stone-300 leading-relaxed">
+              {user ? (
+                <>
+                  Tài khoản <strong className="text-pink-600 font-mono">{user.email}</strong> hiện không nằm trong danh sách Tác giả / Quản trị viên được cấp quyền truy cập Studio.
+                </>
+              ) : (
+                <>
+                  Studio xuất bản và đăng truyện chỉ dành riêng cho Tác giả <strong>Mellifluous</strong> và các cộng sự được phân quyền. Vui lòng đăng nhập với tài khoản Google tác giả để tiếp tục.
+                </>
+              )}
+            </p>
+          </div>
+
+          <div className="pt-2 space-y-2.5">
+            {user ? (
+              <button
+                type="button"
+                id="switch-author-account-btn"
+                onClick={openAuthModal}
+                className="w-full py-2.5 px-4 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Đổi sang tài khoản tác giả khác</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="login-author-google-btn"
+                onClick={openAuthModal}
+                className="w-full py-2.5 px-4 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Đăng nhập Google Tác Giả</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              id="close-unauthorized-modal-btn"
+              onClick={onClose}
+              className="w-full py-2.5 px-4 rounded-xl border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 text-xs sm:text-sm font-medium hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+            >
+              Trở lại trang web
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const showFeedback = (type: 'success' | 'error', text: string) => {
     setFeedbackMessage({ type, text });
@@ -328,6 +423,36 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
     }
   };
 
+  // Letter handlers for Author
+  const handleAuthorReplyLetter = async (letterId: string) => {
+    if (!authorReplyInput.trim() || isSendingReply) return;
+    setIsSendingReply(true);
+    try {
+      await replyToReaderLetter(
+        letterId,
+        authorReplyInput.trim(),
+        user?.displayName ? `${user.displayName} (Tác giả)` : 'Mellifluous (Tác giả)'
+      );
+      showFeedback('success', '✓ Đã gửi hồi đáp cho bạn đọc thành công!');
+      setAuthorReplyInput('');
+      setReplyingLetterId(null);
+    } catch (err) {
+      showFeedback('error', 'Lỗi khi gửi hồi đáp cho bạn đọc.');
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
+
+  const handleDeleteLetterFromModal = async (letterId: string) => {
+    if (!window.confirm('Xác nhận xóa bức thư này khỏi hệ thống?')) return;
+    try {
+      await deleteReaderLetter(letterId);
+      showFeedback('success', 'Đã xóa bức thư thành công.');
+    } catch (err) {
+      showFeedback('error', 'Lỗi khi xóa bức thư.');
+    }
+  };
+
   return (
     <div
       id="author-publishing-modal"
@@ -344,26 +469,40 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
               <Sparkles className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="font-serif text-base sm:text-lg font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
-                <span>Trung tâm Tác giả & Xuất bản Web</span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300 font-mono">
-                  better and better
+              <div className="flex items-center gap-2">
+                <h2 className="font-serif text-base sm:text-lg font-bold text-stone-800 dark:text-stone-100">
+                  Trung tâm Tác giả & Xuất bản Web
+                </h2>
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300 font-medium flex items-center gap-1">
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>{user?.displayName || 'Tác giả'}</span>
                 </span>
-              </h2>
+              </div>
               <p className="text-xs text-stone-500 dark:text-stone-400">
-                Đưa số liệu về mặc định và quản lý các bài đăng chính thức của Mellifluous
+                Đang đăng nhập: <strong className="font-mono text-pink-600 dark:text-pink-400">{user?.email}</strong> • Quản lý xuất bản & tác phẩm Mellifluous
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            id="close-author-modal-btn"
-            onClick={onClose}
-            className="p-2 rounded-xl bg-stone-100 hover:bg-pink-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-500 hover:text-pink-600 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={logout}
+              className="px-2.5 py-1.5 rounded-xl border border-stone-200 dark:border-stone-700 text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 text-xs font-medium hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors flex items-center gap-1 cursor-pointer"
+              title="Đăng xuất"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Đăng xuất</span>
+            </button>
+            <button
+              type="button"
+              id="close-author-modal-btn"
+              onClick={onClose}
+              className="p-2 rounded-xl bg-stone-100 hover:bg-pink-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-500 hover:text-pink-600 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Feedback Alert Toast */}
@@ -436,6 +575,19 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
           >
             <Bell className="w-3.5 h-3.5" />
             <span>Đăng Bảng tin</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('letters')}
+            className={`py-3 px-3 text-xs sm:text-sm font-medium border-b-2 transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+              activeTab === 'letters'
+                ? 'border-pink-500 text-pink-600 dark:text-pink-400 font-bold bg-white dark:bg-stone-800/80 rounded-t-xl'
+                : 'border-transparent text-stone-600 dark:text-stone-400 hover:text-pink-600'
+            }`}
+          >
+            <Mail className="w-3.5 h-3.5" />
+            <span>Hòm thư bạn đọc ({letters.length})</span>
           </button>
 
           <button
@@ -951,6 +1103,201 @@ export const AuthorPublishModal: React.FC<AuthorPublishModalProps> = ({
                 </button>
               </div>
             </form>
+          )}
+
+          {/* ========================================================= */}
+          {/* TAB: QUẢN LÝ HÒM THƯ BẠN ĐỌC & HỒI ĐÁP (READER LETTERS)   */}
+          {/* ========================================================= */}
+          {activeTab === 'letters' && (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-stone-100 dark:border-stone-800">
+                <div>
+                  <h3 className="font-serif text-sm sm:text-base font-bold text-stone-800 dark:text-stone-100 flex items-center gap-2">
+                    <Mail className="w-4 h-4 text-pink-500" />
+                    <span>Hòm thư & Tâm sự của Độc giả ({letters.length})</span>
+                  </h3>
+                  <p className="text-xs text-stone-500 dark:text-stone-400">
+                    Phản hồi các tâm tình, giải đáp câu hỏi và gửi gắm những lời chúc dịu dàng tới bạn đọc
+                  </p>
+                </div>
+
+                {/* Filter buttons */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {[
+                    { id: 'all', label: 'Tất cả' },
+                    { id: 'unanswered', label: 'Chưa hồi đáp' },
+                    { id: 'private', label: 'Thư kín 🔒' },
+                    { id: 'public', label: 'Công khai 💌' },
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      type="button"
+                      onClick={() => setLetterFilter(f.id as any)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                        letterFilter === f.id
+                          ? 'bg-pink-500 text-white shadow-2xs'
+                          : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {letters.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl bg-stone-50 dark:bg-stone-800/40 border border-stone-200 dark:border-stone-700 space-y-2">
+                  <p className="text-sm font-serif text-stone-700 dark:text-stone-300">
+                    Hòm thư hiện chưa có bức thư nào.
+                  </p>
+                  <p className="text-xs text-stone-500">
+                    Khi độc giả gửi lời nhắn hoặc tâm sự, thư sẽ tự động hiển thị tại đây để bạn đọc và phản hồi!
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {letters
+                    .filter((item) => {
+                      if (letterFilter === 'unanswered') return !item.replyFromMel;
+                      if (letterFilter === 'private') return item.type === 'private';
+                      if (letterFilter === 'public') return item.type === 'public';
+                      return true;
+                    })
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-stone-800/90 border border-stone-200 dark:border-stone-700 shadow-xs space-y-3"
+                      >
+                        {/* Letter Header */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-xl select-none">{item.avatar || '💌'}</span>
+                            <div>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-serif font-bold text-sm text-stone-800 dark:text-stone-100">
+                                  {item.sender}
+                                </span>
+                                {item.type === 'private' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300 flex items-center gap-1">
+                                    <Lock className="w-2.5 h-2.5" />
+                                    <span>Thư thầm kín</span>
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300">
+                                    Công khai
+                                  </span>
+                                )}
+                                {item.tag && (
+                                  <span className="text-[10px] px-2 py-0.5 rounded-md bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-400">
+                                    {item.tag}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] text-stone-400 font-mono mt-0.5">
+                                <span>{item.time || new Date(item.createdAt).toLocaleDateString('vi-VN')}</span>
+                                {item.senderEmail && (
+                                  <>
+                                    <span>•</span>
+                                    <span>{item.senderEmail}</span>
+                                  </>
+                                )}
+                                {item.secretLookupCode && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="text-amber-600 dark:text-amber-400 font-bold">
+                                      Mã tra cứu: {item.secretLookupCode}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteLetterFromModal(item.id)}
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-stone-700 transition-colors cursor-pointer"
+                            title="Xóa thư"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Letter Content */}
+                        <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-stone-900/60 border border-stone-200/60 dark:border-stone-700/60 text-xs sm:text-sm font-sans text-stone-700 dark:text-stone-300 whitespace-pre-wrap leading-relaxed">
+                          {item.content}
+                        </div>
+
+                        {/* Existing Reply */}
+                        {item.replyFromMel && (
+                          <div className="p-3.5 rounded-xl bg-pink-50/70 dark:bg-pink-950/40 border border-pink-200/80 dark:border-pink-800/60 space-y-1">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-serif font-bold text-pink-700 dark:text-pink-300 flex items-center gap-1.5">
+                                <span>🌸</span>
+                                <span>{item.repliedBy || 'Mellifluous (Tác giả)'}:</span>
+                              </span>
+                              <span className="text-pink-400 font-mono text-[10px]">
+                                {item.repliedAt ? new Date(item.repliedAt).toLocaleDateString('vi-VN') : 'Đã phản hồi'}
+                              </span>
+                            </div>
+                            <p className="text-xs sm:text-sm text-stone-700 dark:text-stone-300 font-sans italic leading-relaxed pl-5">
+                              "{item.replyFromMel}"
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Reply Form */}
+                        {replyingLetterId === item.id ? (
+                          <div className="space-y-2 pt-1">
+                            <textarea
+                              rows={3}
+                              value={authorReplyInput}
+                              onChange={(e) => setAuthorReplyInput(e.target.value)}
+                              placeholder={`Nhập lời phản hồi dịu dàng gửi tới ${item.sender}...`}
+                              className="w-full p-3 rounded-xl border border-pink-300 dark:border-pink-700 bg-white dark:bg-stone-900 text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-pink-400 font-sans"
+                            />
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReplyingLetterId(null);
+                                  setAuthorReplyInput('');
+                                }}
+                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-700 cursor-pointer"
+                              >
+                                Hủy
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isSendingReply || !authorReplyInput.trim()}
+                                onClick={() => handleAuthorReplyLetter(item.id)}
+                                className="px-4 py-1.5 rounded-lg bg-pink-500 hover:bg-pink-600 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors shadow-2xs"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                <span>{isSendingReply ? 'Đang gửi...' : 'Gửi hồi đáp'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end pt-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReplyingLetterId(item.id);
+                                setAuthorReplyInput(item.replyFromMel || '');
+                              }}
+                              className="text-xs text-pink-600 hover:text-pink-700 font-medium flex items-center gap-1.5 px-3 py-1 rounded-lg hover:bg-pink-50 dark:hover:bg-stone-700 transition-colors cursor-pointer"
+                            >
+                              <Reply className="w-3.5 h-3.5" />
+                              <span>{item.replyFromMel ? 'Sửa lời hồi đáp' : 'Hồi đáp thư này'}</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
           )}
 
           {/* ========================================================= */}

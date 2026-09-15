@@ -12,9 +12,12 @@ import {
   X,
   Music,
   Home,
+  User as UserIcon,
+  ShieldCheck,
 } from 'lucide-react';
 import { ActiveTab } from '../types';
 import { bgmEngine, AudioTrack, TRACK_LIST } from '../utils/audioPlayer';
+import { useAuth } from '../lib/authContext';
 
 interface NavbarProps {
   currentTab: ActiveTab;
@@ -37,9 +40,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onTogglePetals,
   onOpenAuthorModal,
 }) => {
+  const { user, isAuthor, openAuthModal } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMusicPlaying, setIsMusicPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<AudioTrack>(TRACK_LIST[0]);
+
 
   useEffect(() => {
     const unsubscribe = bgmEngine.subscribe((state) => {
@@ -218,22 +223,63 @@ export const Navbar: React.FC<NavbarProps> = ({
         </nav>
 
         {/* =================================================================== */}
-        {/* 3. ACTION CONTROLS (SEARCH, MUSIC, PETALS, THEME, HAMBURGER)        */}
+        {/* 3. ACTION CONTROLS (SEARCH, AUTH, MUSIC, PETALS, THEME, HAMBURGER)  */}
         {/* =================================================================== */}
         <div id="navbar-action-controls" className="flex items-center gap-1 sm:gap-1.5 lg:gap-2 shrink-0">
-          {/* Author Studio & Publishing Reset Button */}
-          {onOpenAuthorModal && (
+          {/* Author Studio & Publishing Reset Button - ONLY FOR AUTHOR & COLLABORATORS */}
+          {isAuthor && onOpenAuthorModal && (
             <button
               type="button"
               id="navbar-author-studio-btn"
               onClick={onOpenAuthorModal}
               className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-pink-50 hover:bg-pink-100/90 text-pink-700 dark:bg-pink-950/80 dark:text-pink-300 dark:hover:bg-pink-900/80 border border-pink-200/80 dark:border-pink-800 text-xs font-semibold shadow-2xs transition-all cursor-pointer"
-              title="Trung tâm Quản lý bài đăng & Đưa số liệu về 0"
+              title="Trung tâm Quản lý bài đăng & Đưa số liệu về 0 (Chỉ dành cho Tác giả)"
             >
               <span className="select-none text-xs">🌸</span>
-              <span className="hidden md:inline">Đăng bài & Xuất bản</span>
+              <span className="hidden md:inline">Bàn làm việc Tác giả</span>
             </button>
           )}
+
+          {/* User Account / Google Login Button */}
+          <button
+            type="button"
+            id="navbar-auth-btn"
+            onClick={openAuthModal}
+            className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-medium transition-all cursor-pointer shadow-2xs ${
+              user
+                ? isAuthor
+                  ? 'bg-rose-50 dark:bg-pink-950/80 text-rose-700 dark:text-pink-300 border-rose-200 dark:border-pink-800'
+                  : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-200 border-stone-200 dark:border-stone-700'
+                : 'bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white border-transparent'
+            }`}
+            title={
+              user
+                ? isAuthor
+                  ? 'Tài khoản Tác giả / Quản trị viên (Nhấp để quản lý)'
+                  : 'Tài khoản Độc giả (Nhấp để quản lý)'
+                : 'Đăng nhập Google để gửi bình luận & tâm tư'
+            }
+          >
+            {user ? (
+              <>
+                <div className="w-5 h-5 rounded-full bg-pink-200 dark:bg-pink-900 text-pink-700 dark:text-pink-300 flex items-center justify-center text-[10px] font-bold overflow-hidden shrink-0">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <span>{(user.displayName || user.email || 'M')[0].toUpperCase()}</span>
+                  )}
+                </div>
+                <span className="hidden sm:inline font-serif truncate max-w-[85px]">
+                  {isAuthor ? '🌸 Mel' : (user.displayName || 'Độc giả')}
+                </span>
+              </>
+            ) : (
+              <>
+                <UserIcon className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Đăng nhập</span>
+              </>
+            )}
+          </button>
 
           {/* Search Button - Compact Icon-Only */}
           <button
@@ -246,6 +292,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <Search className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
+
 
           {/* Background Music Toggle Button */}
           <button
@@ -464,8 +511,47 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               </div>
 
-              {/* Author Publishing Studio Button in Mobile Drawer */}
-              {onOpenAuthorModal && (
+              {/* Mobile Account Profile / Login Card */}
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    openAuthModal();
+                  }}
+                  className={`w-full flex items-center justify-between p-3 rounded-2xl border text-xs transition-all cursor-pointer ${
+                    user
+                      ? isAuthor
+                        ? 'bg-rose-50 dark:bg-pink-950/70 text-rose-800 dark:text-pink-300 border-rose-200 dark:border-pink-800/80 font-medium'
+                        : 'bg-stone-50 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border-stone-200 dark:border-stone-700'
+                      : 'bg-gradient-to-r from-pink-500 to-rose-500 text-white font-medium shadow-xs'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 truncate">
+                    <div className="w-7 h-7 rounded-full bg-white/30 dark:bg-black/20 flex items-center justify-center font-bold text-xs shrink-0 overflow-hidden">
+                      {user?.photoURL ? (
+                        <img src={user.photoURL} alt="" className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{user ? (user.displayName || user.email || 'M')[0].toUpperCase() : '👤'}</span>
+                      )}
+                    </div>
+                    <div className="text-left truncate">
+                      <div className="font-semibold truncate">
+                        {user ? (isAuthor ? '🌸 Mellifluous (Tác giả)' : (user.displayName || 'Độc giả')) : 'Đăng nhập tài khoản'}
+                      </div>
+                      <div className="text-[10px] opacity-80 truncate">
+                        {user ? user.email : 'Đăng nhập Gmail để bình luận & gửi tâm tư'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white/25 shrink-0">
+                    {user ? 'Tài khoản' : 'Đăng nhập'}
+                  </span>
+                </button>
+              </div>
+
+              {/* Author Publishing Studio Button in Mobile Drawer - ONLY FOR AUTHORS */}
+              {isAuthor && onOpenAuthorModal && (
                 <button
                   type="button"
                   id="mobile-author-studio-btn"
@@ -473,14 +559,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                     setIsMobileMenuOpen(false);
                     onOpenAuthorModal();
                   }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 text-white font-medium text-xs shadow-sm mt-3 cursor-pointer"
+                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-pink-500 via-rose-500 to-amber-500 text-white font-medium text-xs shadow-sm mt-2 cursor-pointer"
                 >
                   <span className="flex items-center gap-2 font-serif font-bold">
                     <span>🌸</span>
-                    <span>Trung tâm Tác giả & Xuất bản Web</span>
+                    <span>Bàn làm việc Tác giả & Xuất bản</span>
                   </span>
                   <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-mono">
-                    Số liệu = 0
+                    Quản trị
                   </span>
                 </button>
               )}

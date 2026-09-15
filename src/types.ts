@@ -59,16 +59,48 @@ export interface RecentUpdate {
 
 export type ActiveTab = 'home' | 'completed' | 'ongoing' | 'password' | 'other' | 'about';
 
+export interface CommentReply {
+  id: string;
+  user: string;
+  avatar: string;
+  text: string;
+  createdAt: string;
+  isAuthor?: boolean;
+  userEmail?: string;
+}
+
 export interface RealtimeComment {
   id: string;
   storyId: string;
   chapterId?: string;
   chapterNumber?: number;
   user: string;
+  userEmail?: string;
+  userId?: string;
+  isAuthor?: boolean;
   avatar: string;
   text: string;
   createdAt: string;
   rating?: number;
+  replies?: CommentReply[];
+}
+
+export interface ReaderLetter {
+  id: string;
+  sender: string;
+  senderEmail?: string;
+  senderUid?: string;
+  avatar: string;
+  content: string;
+  type: 'public' | 'private';
+  tag: string;
+  time?: string;
+  createdAt: string;
+  likes: number;
+  replyFromMel?: string;
+  repliedAt?: string;
+  repliedBy?: string;
+  secretLookupCode?: string;
 }
 
 export interface StoryRealtimeStats {

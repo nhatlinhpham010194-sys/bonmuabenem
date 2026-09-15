@@ -16,7 +16,8 @@ import {
   limit,
   addDoc,
 } from './firebase';
-import { GlobalRealtimeStats, StoryRealtimeStats, RealtimeComment, Story, Chapter, Announcement } from '../types';
+import { GlobalRealtimeStats, StoryRealtimeStats, RealtimeComment, Story, Chapter, Announcement, ReaderLetter, CommentReply } from '../types';
+export type { ReaderLetter, RealtimeComment, CommentReply, GlobalRealtimeStats, StoryRealtimeStats };
 import { STORIES, SAMPLE_CHAPTERS, ANNOUNCEMENTS } from '../data/mockData';
 
 // Constants
@@ -370,7 +371,7 @@ export const subscribeToComments = (
     commentsColl,
     where('storyId', '==', storyId),
     orderBy('createdAt', 'desc'),
-    limit(50)
+    limit(60)
   );
 
   return onSnapshot(
@@ -385,10 +386,14 @@ export const subscribeToComments = (
           chapterId: item.chapterId,
           chapterNumber: item.chapterNumber,
           user: item.user || 'Độc giả yêu truyện',
+          userEmail: item.userEmail,
+          userId: item.userId,
+          isAuthor: Boolean(item.isAuthor),
           avatar: item.avatar || '🌸',
           text: item.text,
           createdAt: item.createdAt || new Date().toISOString(),
           rating: item.rating,
+          replies: item.replies || [],
         });
       });
 
@@ -416,6 +421,9 @@ export const postRealtimeComment = async (comment: {
   chapterNumber?: number;
   chapterId?: string;
   user: string;
+  userEmail?: string;
+  userId?: string;
+  isAuthor?: boolean;
   avatar?: string;
   text: string;
   rating?: number;
@@ -427,9 +435,13 @@ export const postRealtimeComment = async (comment: {
       chapterNumber: comment.chapterNumber || null,
       chapterId: comment.chapterId || null,
       user: comment.user.trim() || 'Bạn đọc yêu truyện',
+      userEmail: comment.userEmail || null,
+      userId: comment.userId || null,
+      isAuthor: Boolean(comment.isAuthor),
       avatar: comment.avatar || '🌸',
       text: comment.text.trim(),
       rating: comment.rating || null,
+      replies: [],
       createdAt: new Date().toISOString(),
     });
 
@@ -460,6 +472,203 @@ export const postRealtimeComment = async (comment: {
     throw err;
   }
 };
+
+/**
+ * Post an author or reader reply to an existing comment.
+ */
+export const postCommentReply = async (
+  commentId: string,
+  reply: {
+    user: string;
+    text: string;
+    avatar?: string;
+    isAuthor?: boolean;
+    userEmail?: string;
+  }
+): Promise<void> => {
+  try {
+    const commentRef = doc(db, 'comments', commentId);
+    const snap = await getDoc(commentRef);
+    if (!snap.exists()) return;
+
+    const data = snap.data();
+    const currentReplies: CommentReply[] = data.replies || [];
+
+    const newReplyItem: CommentReply = {
+      id: `rep_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      user: reply.user.trim(),
+      avatar: reply.avatar || (reply.isAuthor ? '🌸' : '💬'),
+      text: reply.text.trim(),
+      createdAt: new Date().toISOString(),
+      isAuthor: Boolean(reply.isAuthor),
+      userEmail: reply.userEmail,
+    };
+
+    await updateDoc(commentRef, {
+      replies: [...currentReplies, newReplyItem],
+      lastRepliedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('Failed to post comment reply:', err);
+    throw err;
+  }
+};
+
+/**
+ * Delete a comment (Author / Moderator only)
+ */
+export const deleteComment = async (commentId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'comments', commentId));
+  } catch (err) {
+    console.error('Failed to delete comment:', err);
+    throw err;
+  }
+};
+
+/* ========================================================================
+ * READER LETTERS & CONFESSIONS (HÒM THƯ TÂM SỰ CỦA ĐỘC GIẢ & TÁC GIẢ HỒI ĐÁP)
+ * ======================================================================== */
+
+/**
+ * Subscribe to realtime reader letters and confessions.
+ */
+export const subscribeToReaderLetters = (
+  callback: (letters: ReaderLetter[]) => void
+): (() => void) => {
+  const lettersColl = collection(db, 'reader_letters');
+  const q = query(lettersColl, orderBy('createdAt', 'desc'), limit(100));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: ReaderLetter[] = [];
+      snapshot.forEach((d) => {
+        const item = d.data();
+        list.push({
+          id: d.id,
+          sender: item.sender || 'Bạn đọc giấu tên',
+          senderEmail: item.senderEmail,
+          senderUid: item.senderUid,
+          avatar: item.avatar || '💌',
+          content: item.content || '',
+          type: item.type === 'private' ? 'private' : 'public',
+          tag: item.tag || '🌸 Lời nhắn gửi',
+          time: item.time || (item.createdAt ? new Date(item.createdAt).toLocaleDateString('vi-VN') : 'Vừa xong'),
+          createdAt: item.createdAt || new Date().toISOString(),
+          likes: item.likes || 0,
+          replyFromMel: item.replyFromMel,
+          repliedAt: item.repliedAt,
+          repliedBy: item.repliedBy,
+        });
+      });
+      callback(list);
+    },
+    (err) => {
+      console.warn('Reader letters snapshot error:', err);
+      // Fallback to local storage if any
+      try {
+        const saved = localStorage.getItem('mel_reader_letters_cache');
+        if (saved) callback(JSON.parse(saved));
+        else callback([]);
+      } catch {
+        callback([]);
+      }
+    }
+  );
+};
+
+/**
+ * Submit a reader letter/confession to Firestore.
+ */
+export const sendReaderLetter = async (letter: {
+  sender: string;
+  senderEmail?: string;
+  senderUid?: string;
+  avatar?: string;
+  content: string;
+  type: 'public' | 'private';
+  tag?: string;
+  userEmail?: string;
+  userId?: string;
+}): Promise<{ id: string; secretLookupCode?: string }> => {
+  try {
+    const lettersColl = collection(db, 'reader_letters');
+    const secretLookupCode =
+      letter.type === 'private'
+        ? `MEL-${Math.floor(10000 + Math.random() * 90000)}`
+        : undefined;
+
+    const docRef = await addDoc(lettersColl, {
+      sender: letter.sender.trim() || 'Bạn đọc yêu mến',
+      senderEmail: letter.senderEmail || letter.userEmail || null,
+      senderUid: letter.senderUid || letter.userId || null,
+      avatar: letter.avatar || '💌',
+      content: letter.content.trim(),
+      type: letter.type,
+      tag: letter.tag || '🌸 Lời nhắn gửi',
+      time: 'Vừa xong',
+      createdAt: new Date().toISOString(),
+      likes: 0,
+      replyFromMel: null,
+      repliedAt: null,
+      repliedBy: null,
+      secretLookupCode: secretLookupCode || null,
+    });
+    return { id: docRef.id, secretLookupCode };
+  } catch (err) {
+    console.error('Failed to send reader letter:', err);
+    throw err;
+  }
+};
+
+/**
+ * Author or collaborator replies to a reader's letter/confession.
+ */
+export const replyToReaderLetter = async (
+  letterId: string,
+  replyText: string,
+  authorName: string = 'Mellifluous (Tác giả)'
+): Promise<void> => {
+  try {
+    const letterRef = doc(db, 'reader_letters', letterId);
+    await updateDoc(letterRef, {
+      replyFromMel: replyText.trim(),
+      repliedAt: new Date().toISOString(),
+      repliedBy: authorName,
+    });
+  } catch (err) {
+    console.error('Failed to reply to reader letter:', err);
+    throw err;
+  }
+};
+
+/**
+ * Delete a reader letter (Author / Moderator only)
+ */
+export const deleteReaderLetter = async (letterId: string): Promise<void> => {
+  try {
+    await deleteDoc(doc(db, 'reader_letters', letterId));
+  } catch (err) {
+    console.error('Failed to delete reader letter:', err);
+    throw err;
+  }
+};
+
+/**
+ * Toggle like for a reader letter
+ */
+export const toggleLetterLike = async (letterId: string): Promise<void> => {
+  try {
+    const letterRef = doc(db, 'reader_letters', letterId);
+    await updateDoc(letterRef, {
+      likes: increment(1),
+    });
+  } catch (err) {
+    console.warn('Failed to like letter:', err);
+  }
+};
+
 
 /**
  * Register follower/email subscription in real time.

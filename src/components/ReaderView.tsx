@@ -3,10 +3,13 @@ import { Story, Chapter, RealtimeComment } from '../types';
 import {
   subscribeToComments,
   postRealtimeComment,
+  postCommentReply,
+  deleteComment,
   subscribeToStoryStats,
   toggleStoryLike,
   recordStoryView,
 } from '../lib/realtimeService';
+import { useAuth } from '../lib/authContext';
 import {
   ChevronLeft,
   ChevronRight,
@@ -35,7 +38,13 @@ import {
   SunMedium,
   Moon,
   Palette,
+  CornerDownRight,
+  Reply,
+  Trash2,
+  ShieldCheck,
+  User as UserIcon,
 } from 'lucide-react';
+
 
 export type ReaderThemeKey = 'default' | 'sepia' | 'matcha' | 'mocha' | 'dark';
 
@@ -164,6 +173,7 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   onGoToPasswordGuide,
   onOpenStoryDetail,
 }) => {
+  const { user, isAuthor, openAuthModal } = useAuth();
   const safeAllChapters = allChapters || [];
   // Reading preferences stored in localStorage
   const [themeKey, setThemeKey] = useState<ReaderThemeKey>(() => {
@@ -211,6 +221,25 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const [comments, setComments] = useState<RealtimeComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [commenterName, setCommenterName] = useState('');
+
+  // Comment replies & deletion state
+  const [replyingCommentId, setReplyingCommentId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+
+  // Auto-fill commenter name from auth
+  useEffect(() => {
+    if (user) {
+      if (isAuthor) {
+        setCommenterName('Mellifluous (Tác giả)');
+      } else if (user.displayName) {
+        setCommenterName(user.displayName);
+      } else if (user.email) {
+        setCommenterName(user.email.split('@')[0]);
+      }
+    }
+  }, [user, isAuthor]);
+
 
   const contentRef = useRef<HTMLDivElement>(null);
   const currentTheme = READER_THEMES[themeKey] || READER_THEMES.default;
@@ -330,15 +359,19 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
   const handleAddComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || isSubmittingComment) return;
-    const author = commenterName.trim() || 'Bạn đọc yêu truyện';
+    const author = commenterName.trim() || (isAuthor ? 'Mellifluous (Tác giả)' : (user?.displayName || 'Bạn đọc yêu truyện'));
     setIsSubmittingComment(true);
     try {
       await postRealtimeComment({
         storyId: story.id,
         chapterNumber: chapter.chapterNumber,
+        chapterId: chapter.id,
         user: author,
+        userEmail: user?.email,
+        userId: user?.uid,
+        isAuthor: Boolean(isAuthor),
+        avatar: isAuthor ? '🌸' : (user?.photoURL || '🌸'),
         text: newComment.trim(),
-        avatar: '🌸',
       });
       setNewComment('');
     } catch (err) {
@@ -347,6 +380,36 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
       setIsSubmittingComment(false);
     }
   };
+
+  const handleSendReply = async (commentId: string) => {
+    if (!replyText.trim() || isSubmittingReply) return;
+    setIsSubmittingReply(true);
+    try {
+      await postCommentReply(commentId, {
+        user: isAuthor ? 'Mellifluous (Tác giả)' : (user?.displayName || commenterName.trim() || 'Bạn đọc'),
+        text: replyText.trim(),
+        avatar: isAuthor ? '🌸' : '💬',
+        isAuthor: Boolean(isAuthor),
+        userEmail: user?.email,
+      });
+      setReplyText('');
+      setReplyingCommentId(null);
+    } catch (err) {
+      console.error('Failed to post reply:', err);
+    } finally {
+      setIsSubmittingReply(false);
+    }
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    if (!window.confirm('Xác nhận xóa bình luận này?')) return;
+    try {
+      await deleteComment(commentId);
+    } catch (err) {
+      console.error('Failed to delete comment:', err);
+    }
+  };
+
 
   const handleShare = () => {
     if (navigator.clipboard) {
@@ -950,6 +1013,32 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           </span>
         </div>
 
+        {/* User Auth Status or Login Prompt for Commenting */}
+        <div className="flex items-center justify-between px-1 text-xs">
+          {user ? (
+            <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span>Đang bình luận với tên:</span>
+              <strong className="font-semibold text-pink-600 dark:text-pink-400">
+                {isAuthor ? '🌸 Mellifluous (Tác giả)' : (user.displayName || user.email)}
+              </strong>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between w-full">
+              <span className={`text-[11px] ${currentTheme.subtextColor}`}>
+                Bạn có thể bình luận tự do, hoặc đăng nhập để lưu dấu ấn độc giả:
+              </span>
+              <button
+                type="button"
+                onClick={openAuthModal}
+                className="text-[11px] font-semibold text-pink-600 hover:text-pink-700 dark:text-pink-400 underline cursor-pointer"
+              >
+                Đăng nhập tài khoản
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Comment Input Form */}
         <form onSubmit={handleAddComment} className="space-y-2.5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -971,41 +1060,164 @@ export const ReaderView: React.FC<ReaderViewProps> = ({
           <div className="flex justify-end">
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 text-white text-xs font-medium flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+              disabled={isSubmittingComment}
+              className="px-4 py-2 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white text-xs font-medium flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>Gửi bình luận</span>
+              <span>{isSubmittingComment ? 'Đang gửi...' : 'Gửi bình luận'}</span>
             </button>
           </div>
         </form>
 
         {/* Comments List */}
-        <div className="space-y-2.5 pt-1">
-          {comments.map((cmt) => (
-            <div
-              key={cmt.id}
-              className={`p-3.5 rounded-2xl border flex items-start gap-2.5 transition-colors ${currentTheme.secondaryBtnBg} ${currentTheme.cardBorder}`}
-            >
-              <div className="w-7 h-7 rounded-full bg-pink-100 dark:bg-pink-950/80 text-pink-600 flex items-center justify-center text-xs shrink-0">
-                {cmt.avatar}
-              </div>
-              <div className="space-y-0.5 flex-1 min-w-0">
-                <div className="flex items-center justify-between text-xs">
-                  <span className={`font-semibold font-serif truncate ${currentTheme.textColor}`}>
-                    {cmt.user}
-                  </span>
-                  <span className={`text-[10px] font-mono shrink-0 ml-2 ${currentTheme.subtextColor}`}>
-                    {cmt.time || (cmt.createdAt ? new Date(cmt.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong')}
-                  </span>
-                </div>
-                <p className={`text-xs sm:text-[13px] font-sans leading-relaxed break-words ${currentTheme.textColor}`}>
-                  {cmt.text}
-                </p>
-              </div>
+        <div className="space-y-3 pt-1">
+          {comments.length === 0 ? (
+            <div className={`p-6 rounded-2xl border text-center text-xs italic ${currentTheme.cardBorder} ${currentTheme.subtextColor}`}>
+              🌸 Chưa có bình luận nào cho chương này. Hãy là người đầu tiên chia sẻ cảm nhận nhé!
             </div>
-          ))}
+          ) : (
+            comments.map((cmt) => (
+              <div
+                key={cmt.id}
+                className={`p-3.5 rounded-2xl border space-y-2.5 transition-colors ${
+                  cmt.isAuthor
+                    ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60'
+                    : `${currentTheme.secondaryBtnBg} ${currentTheme.cardBorder}`
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs shrink-0 ${
+                      cmt.isAuthor
+                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-200 ring-2 ring-rose-400/40'
+                        : 'bg-pink-100 dark:bg-pink-950/80 text-pink-600'
+                    }`}
+                  >
+                    {cmt.avatar}
+                  </div>
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex items-center justify-between text-xs gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`font-semibold font-serif truncate ${currentTheme.textColor}`}>
+                          {cmt.user}
+                        </span>
+                        {cmt.isAuthor && (
+                          <span className="inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/70 dark:text-rose-300 border border-rose-300/60 shrink-0">
+                            🌸 Tác giả
+                          </span>
+                        )}
+                      </div>
+                      <span className={`text-[10px] font-mono shrink-0 ${currentTheme.subtextColor}`}>
+                        {cmt.time || (cmt.createdAt ? new Date(cmt.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : 'Vừa xong')}
+                      </span>
+                    </div>
+
+                    <p className={`text-xs sm:text-[13px] font-sans leading-relaxed break-words ${currentTheme.textColor}`}>
+                      {cmt.text}
+                    </p>
+
+                    {/* Action row: Reply button & Delete button (Author only) */}
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReplyingCommentId(replyingCommentId === cmt.id ? null : cmt.id);
+                          setReplyText('');
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-pink-600 hover:text-pink-700 dark:text-pink-400 cursor-pointer"
+                      >
+                        <Reply className="w-3 h-3" />
+                        <span>{replyingCommentId === cmt.id ? 'Hủy trả lời' : 'Trả lời'}</span>
+                      </button>
+
+                      {isAuthor && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteComment(cmt.id)}
+                          className="inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 transition-colors cursor-pointer"
+                          title="Xóa bình luận này (Quyền tác giả)"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Xóa</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Nested Replies */}
+                {cmt.replies && cmt.replies.length > 0 && (
+                  <div className="pl-6 sm:pl-8 space-y-2 border-l-2 border-pink-200/60 dark:border-stone-700 ml-3.5 my-1">
+                    {cmt.replies.map((rep) => (
+                      <div
+                        key={rep.id}
+                        className={`p-2.5 rounded-xl text-xs space-y-1 ${
+                          rep.isAuthor
+                            ? 'bg-rose-100/60 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/50'
+                            : `${currentTheme.cardBg} border ${currentTheme.cardBorder}`
+                        }`}
+                      >
+                        <div className="flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-1.5">
+                            <CornerDownRight className="w-3 h-3 text-pink-500 shrink-0" />
+                            <span className="font-semibold">{rep.user}</span>
+                            {rep.isAuthor && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-full bg-rose-200 text-rose-800 dark:bg-rose-900 dark:text-rose-200">
+                                🌸 Tác giả
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-[10px] font-mono ${currentTheme.subtextColor}`}>
+                            {new Date(rep.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className={`pl-4 font-sans text-xs ${currentTheme.textColor}`}>
+                          {rep.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Inline Reply Form */}
+                {replyingCommentId === cmt.id && (
+                  <div className="pl-6 sm:pl-8 pt-1">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        placeholder={
+                          isAuthor
+                            ? 'Mellifluous phản hồi bạn đọc...'
+                            : 'Nhập phản hồi của bạn...'
+                        }
+                        className={`flex-1 px-3 py-1.5 rounded-xl border text-xs focus:ring-2 focus:ring-pink-400 focus:outline-hidden ${currentTheme.secondaryBtnBg} ${currentTheme.textColor} ${currentTheme.cardBorder}`}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSendReply(cmt.id);
+                          }
+                        }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSendReply(cmt.id)}
+                        disabled={isSubmittingReply || !replyText.trim()}
+                        className="px-3 py-1.5 rounded-xl bg-pink-500 hover:bg-pink-600 disabled:opacity-50 text-white text-xs font-medium cursor-pointer shrink-0"
+                      >
+                        {isSubmittingReply ? 'Đang gửi...' : 'Gửi'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))
+          )}
         </div>
       </section>
+
 
       {/* ========================================================================= */}
       {/* IN-READER TABLE OF CONTENTS MODAL (DRAWER) - NEVER CLOSES READER!        */}
